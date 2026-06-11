@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --color-ds-bg: #0c0f14;
+  --color-ds-panel: #141a22;
+  --color-ds-raised: #1a222d;
+  --color-ds-border: #2a3544;
+  --color-ds-muted: #8b9aaf;
+  --color-ds-text: #e8edf4;
+  --color-ds-accent: #3dd68c;
+  --color-ds-accent-dim: #2a9d63;
+  --color-ds-live: #ff4d5e;
+  --color-ds-nba: #f58426;
+  --color-ds-warn: #facc15;
+  --color-ds-gold: #d4a853;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-ds-bg);
+  color: var(--color-ds-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-ds-border);
+  border-radius: 3px;
+}
+
+/* Always show a visible scrollbar in constrained panels (live board, etc.) */
+.ds-scroll-y {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ds-muted) var(--color-ds-raised);
+}
+
+.ds-scroll-y::-webkit-scrollbar {
+  width: 10px;
+}
+
+.ds-scroll-y::-webkit-scrollbar-track {
+  margin: 4px 0;
+  background: var(--color-ds-raised);
+  border-radius: 5px;
+}
+
+.ds-scroll-y::-webkit-scrollbar-thumb {
+  background: var(--color-ds-muted);
+  border-radius: 5px;
+  border: 2px solid var(--color-ds-raised);
+}
+
+.ds-scroll-y::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ds-text);
+}

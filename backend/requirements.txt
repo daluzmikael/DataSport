@@ -1,0 +1,17 @@
+flask
+flask-cors
+requests
+psycopg2-binary
+python-dotenv
+openai
+pydantic
+uvicorn
+fastapi
+pandas
+pyarrow
+duckdb
+numpy
+nba-api
+pyrebase4
+firebase-admin
+sqlglot

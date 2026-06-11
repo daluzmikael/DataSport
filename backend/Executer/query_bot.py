@@ -1,0 +1,275 @@
+﻿"""
+To be deleted. Call executor.py and interpreter.py functions directly instead of this layer.
+"""
+
+import logging
+import psycopg2
+import re
+import pandas as pd
+from openai import OpenAI
+import os 
+
+# 1. OpenAI client
+from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
+load_dotenv()
+# Never print or log the raw API key
+if os.getenv("OPENAI_API_KEY"):
+    logger.debug("OpenAI API key loaded from environment")
+else:
+    logger.warning("OPENAI_API_KEY is not set")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# 2. Connect to PostgreSQL (AWS RDS)
+def get_connection():
+    """Get a fresh database connection (database name from POSTGRES_DB, default NBA-STATS)."""
+    load_dotenv()
+    password = os.getenv("POSTGRES_PASSWORD")
+    if not password:
+        raise RuntimeError("POSTGRES_PASSWORD is not set in environment or .env")
+    return psycopg2.connect(
+        host=os.environ["POSTGRES_HOST"],
+        port=int(os.getenv("POSTGRES_PORT", "5432")),
+        dbname=os.environ["POSTGRES_DB"],
+        user=os.environ["POSTGRES_USER"],
+        password=password,
+        sslmode=os.getenv("POSTGRES_SSLMODE", "require"),
+    )
+
+conn = get_connection()
+cursor = conn.cursor()
+
+# Analyzer bridge globals
+df_output = None
+user_input = None
+
+
+# 3. Read DB schema (for GPT prompt)
+def get_db_schema():
+    global conn, cursor
+    try:
+        cursor.execute("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public';
+        """)
+    except Exception:
+        # Reconnect if connection is dead
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public';
+        """)
+
+    tables = cursor.fetchall()
+    schema_description = ""
+
+    for table in tables:
+        table_name = table[0]
+
+        cursor.execute(f"""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = '{table_name}'
+        """)
+
+        columns = cursor.fetchall()
+        column_list = ", ".join([col[0] for col in columns])
+        schema_description += f"{table_name}({column_list})\n"
+
+    return schema_description
+
+
+# 4. SQL safety checker
+def is_safe_sql(sql_query):
+    sql_lower = sql_query.strip().lower()
+    sql_lower = re.sub(r"--.*?\n", "", sql_lower).strip()
+
+    if "select" not in sql_lower:
+        return False
+
+    dangerous = ["insert", "update", "delete", "drop",
+                 "alter", "create", "replace", "truncate"]
+
+    for keyword in dangerous:
+        if re.search(rf"\b{keyword}\b", sql_lower):
+            return False
+
+    return True
+
+
+# 5. Row cap — disabled (matches executor.limit_rows); do not inject LIMIT.
+def limit_rows(sql_query, limit=50):
+    """Return SQL unchanged; automatic LIMIT injection removed."""
+    return sql_query
+
+# 5.5 repair SQL error
+
+def repair_sql_error(original_sql, error_message, schema_description, user_input):
+    r_prompt = f"""
+    The following SQL query failed:
+
+    Database schema:
+    {schema_description}
+
+    User request:
+    "{user_input}"
+
+    Failed SQL:
+    {original_sql}
+
+    Database error:
+    {error_message}
+
+    Fix the SQL to match the schema exactly.
+    Return ONLY a valid PostgreSQL SELECT query.
+    Do NOT include any additional text or markdown.
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "Return ONLY valid SQL."},
+            {"role": "user", "content": r_prompt}
+        ],
+        temperature=0,
+        max_tokens=1500
+    )
+
+    fixed_sql = response.choices[0].message.content.strip()
+    fixed_sql = fixed_sql.replace("```sql", "").replace("```", "").strip()
+
+    return fixed_sql
+
+
+
+# 6. Convert natural language → SQL
+def natural_language_to_sql(user_input_param: str):
+    global df_output, conn, cursor, user_input
+
+    user_input = user_input_param
+    schema_description = get_db_schema()
+
+    prompt = f"""
+You are a senior SQL data engineer.
+Your task is to convert a natural language request into a VALID PostgreSQL SELECT query for the NBA stats database.
+
+CRITICAL TABLE USAGE RULES:
+1. **Season Summaries** (`all_players_regular_...` / `all_players_playoffs_...` tables):
+   - USE FOR: "Averages", "Top Scorers", "Season long trends", and percentage stats.
+   - These tables DO NOT have a 'season_id' or 'game_date' column.
+   - These tables DO have pre-calculated percentage columns (e.g., 'fg_pct', 'fg3_pct', 'ft_pct').
+   - If the question needs columns from **two** compatible tables (same kind of entity/season), use **JOIN** and keys that exist in the schema below.
+
+2. **Game Logs** (`player_game_logs`):
+   - USE FOR: "Recent Games", "Streaks", "Matchups", "Last X games".
+   - This table HAS 'game_date' and 'season_id'.
+   - This table does NOT store shooting percentage columns. Select raw makes and attempts only (fgm, fga, fg3m, fg3a, ftm, fta). For FG%/3P%/FT% as stored values, use a season summary table instead.
+   - CRITICAL: Use `season_id = '22025'` for current 2025-26 stats.
+
+GENERAL RULES:
+- Use ONLY tables and columns that exist in the schema below.
+- NEVER assume 'season_id' exists in a 'regular' or 'playoffs' table.
+- ALWAYS use ILIKE for player names.
+
+
+DATABASE SCHEMA:
+{schema_description}
+
+USER REQUEST:
+{user_input_param}
+
+Generate the SQL"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a SQL query generator. Return ONLY valid SQL queries."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0,
+            max_tokens=1500
+        )
+
+        sql_query = response.choices[0].message.content.strip()
+        sql_query = sql_query.replace("```sql", "").replace("```", "").strip()
+
+    except Exception as e:
+        print(f"[ERROR] OpenAI API error: {e}")
+        return None
+
+    sql_query = limit_rows(sql_query)
+
+    if not is_safe_sql(sql_query):
+        print(f"[ERROR] Unsafe SQL generated: {sql_query}")
+        return None
+
+    # Execution with self query repair loop
+    max_attempts = 3
+
+    for attempt in range(max_attempts):
+        try:
+            print(f"[DEBUG] Attempt {attempt+1} executing query...")
+            cursor.execute(sql_query)
+
+            rows = cursor.fetchall()
+            colnames = [desc[0] for desc in cursor.description]
+
+            df = pd.DataFrame(rows, columns=colnames)
+            print(f"[DEBUG] Query returned {len(df)} rows")
+
+            df_output = df
+            #conn.commit() not needed here -kon
+            return df
+
+        except Exception as e:
+            error_message = str(e)
+            print(f"[ERROR] SQL execution error: {error_message}")
+
+            # Only repair schema-related errors
+            if any(keyword in error_message.lower()
+                   for keyword in ["does not exist", "column", "relation"]):
+
+                print("[DEBUG] Attempting schema self-repair...")
+
+                sql_query = repair_sql_error(
+                    original_sql=sql_query,
+                    error_message=error_message,
+                    schema_description=schema_description,
+                    user_input=user_input_param
+                )
+
+                sql_query = limit_rows(sql_query)
+
+                if not is_safe_sql(sql_query):
+                    print("[ERROR] Repaired SQL is unsafe.")
+                    return None
+
+                continue
+
+            else:
+                print("[ERROR] Non-repairable error.")
+                conn.rollback()
+                return None
+
+    print("[ERROR] Max repair attempts reached.")
+    conn.rollback()
+    return None
+
+
+# 7. Interactive query loop
+if __name__ == "__main__":
+    print("Welcome to HoopQuery! Type 'quit' to exit.")
+    while True:
+        user_inp = input("\nAsk a question about NBA data: ")
+        if user_inp.lower() in ["quit", "exit"]:
+            break
+        natural_language_to_sql(user_inp)
+
+
+def run_query(question: str):
+    return natural_language_to_sql(question)

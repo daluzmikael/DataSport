@@ -13,6 +13,7 @@ import { LiveDashboard } from "./components/LiveDashboard"
 import { LoginGate } from "./components/LoginGate"
 import { NavRail } from "./components/NavRail"
 import { FavoritesPage } from "./components/FavoritesPage"
+import { PlayerLibraryPage } from "./components/PlayerLibraryPage"
 import { PlaceholderPage } from "./components/PlaceholderPage"
 import { StagingConnectionBar } from "./components/StagingConnectionBar"
 import type { ChatMessage, DetailTarget, NavPage } from "./types"
@@ -76,7 +77,7 @@ export default function App() {
         style={{ gridTemplateColumns: "5fr 10fr 50fr 35fr" }}
       >
         <NavRail active={nav} onNavigate={setNav} />
-        {nav !== "favorites" && (
+        {nav !== "favorites" && nav !== "players" && (
           <ChatSidebar
             threads={CHAT_THREADS}
             folders={CHAT_FOLDERS}
@@ -99,6 +100,13 @@ export default function App() {
             <FavoritesPage
               onOpenPlayer={(id) => setDetail({ type: "player", id })}
               onOpenTeam={(id) => setDetail({ type: "team", id })}
+            />
+          </div>
+        )}
+        {nav === "players" && (
+          <div className="col-span-3 min-w-0" style={{ gridColumn: "2 / -1" }}>
+            <PlayerLibraryPage
+              onOpenPlayer={(id) => setDetail({ type: "player", id })}
             />
           </div>
         )}

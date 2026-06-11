@@ -12,6 +12,7 @@ import { ShotChartCourt } from "./ShotChartCourt"
 
 interface PlayerProfileDetailProps {
   player: PlayerLive
+  initialSeason?: string
   onOpenPlayerGame: (playerId: string, gameId: string) => void
   onReference: (label: string) => void
   onAsk?: () => void
@@ -53,6 +54,7 @@ function PlayerAccoladesRow({ playerId }: { playerId: string }) {
 
 export function PlayerProfileDetail({
   player,
+  initialSeason,
   onOpenPlayerGame,
   onReference,
   onAsk,
@@ -78,8 +80,9 @@ export function PlayerProfileDetail({
       </section>
 
       <PlayerGameLogTable
-        key={player.id}
+        key={`${player.id}-${initialSeason ?? ""}`}
         playerId={player.id}
+        initialSeason={initialSeason}
         showSeasonBubbles
         showLiveRow={Boolean(liveGameId)}
         liveGameId={liveGameId}

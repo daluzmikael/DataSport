@@ -120,6 +120,61 @@ export async function fetchStagingHealth(): Promise<{ tables: string[] } | null>
   }
 }
 
+export type StagingPlayerSearchHit = {
+  nbaId: string
+  id: string
+  name: string
+  teamAbbr: string
+  teamId?: string
+  firstSeason?: string
+  lastSeason?: string
+  seasonCount?: number
+}
+
+function mapPlayerSearchRow(row: Record<string, unknown>): StagingPlayerSearchHit | null {
+  const rawId = row.PLAYER_ID ?? row.player_id
+  const nbaId = rawId != null ? String(rawId).trim() : ""
+  if (!nbaId) return null
+  const name = String(row.PLAYER_NAME ?? row.player_name ?? "Unknown")
+  const teamAbbr = String(row.TEAM_ABBREVIATION ?? row.team_abbreviation ?? "—")
+  const teamRaw = row.TEAM_ID ?? row.team_id
+  const firstSeason = row.first_season ?? row.firstSeason
+  const lastSeason = row.last_season ?? row.lastSeason
+  const seasonCountRaw = row.season_count ?? row.seasonCount
+  const seasonCount =
+    seasonCountRaw != null && !Number.isNaN(Number(seasonCountRaw))
+      ? Number(seasonCountRaw)
+      : undefined
+  return {
+    nbaId,
+    id: `nba-${nbaId}`,
+    name,
+    teamAbbr,
+    teamId: teamRaw != null ? String(teamRaw) : undefined,
+    firstSeason: firstSeason != null ? String(firstSeason) : undefined,
+    lastSeason: lastSeason != null ? String(lastSeason) : undefined,
+    seasonCount,
+  }
+}
+
+/** Search the full vault by player name (all seasons, one row per player). */
+export async function fetchPlayerSearch(
+  q: string,
+  limit = 50,
+): Promise<StagingPlayerSearchHit[] | null> {
+  const term = q.trim()
+  if (term.length < 2) return []
+  const json = await stagingGetFull<Record<string, unknown>[]>(
+    "/api/staging/players/search",
+    { q: term, limit },
+    { retries: 2 },
+  )
+  if (!json?.data) return null
+  return json.data
+    .map((row) => mapPlayerSearchRow(row))
+    .filter((h): h is StagingPlayerSearchHit => h != null)
+}
+
 export async function fetchPlayerSeasonStats(
   playerId: string,
   season: string,

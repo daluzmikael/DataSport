@@ -79,8 +79,12 @@ function isTonightsFeedGame(gameId: string | undefined, feed: LiveFeedItem[]): b
   return feed.some((i) => i.id === gameId)
 }
 
+export function formatMinutesTenth(minutes: number): string {
+  return (Math.round(minutes * 10) / 10).toFixed(1)
+}
+
 function gameClockMeta(player: PlayerLive): string {
-  const metaBase = `${player.minutes} min`
+  const metaBase = `${formatMinutesTenth(player.minutes)} min`
   const clockPart =
     player.period === "Final"
       ? player.clock
@@ -107,7 +111,7 @@ export function resolveHistoricalGamePageStatus(
   return {
     statusLabel: "Game finished",
     statusTone: "gameover",
-    metaLine: `${minutes} min · Final · ${gameDateLabel}${wlPart}`,
+    metaLine: `${formatMinutesTenth(minutes)} min · Final · ${gameDateLabel}${wlPart}`,
   }
 }
 

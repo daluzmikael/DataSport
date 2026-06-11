@@ -1,12 +1,15 @@
 import { Plus, Search, Star, Trash2, Users } from "lucide-react"
 import { useMemo, useState } from "react"
+import { USE_STAGING_API } from "../api/config"
 import {
   INITIAL_FOLLOWED_PLAYERS,
   INITIAL_FOLLOWED_TEAMS,
   SEARCHABLE_PLAYERS,
   SEARCHABLE_TEAMS,
 } from "../data/favoritesMock"
+import { usePlayerVaultSearch } from "../hooks/usePlayerVaultSearch"
 import type { FavoritePlayer, FavoriteTeam } from "../types"
+import { StagingBadge } from "./StagingBadge"
 
 interface FavoritesPageProps {
   onOpenPlayer: (id: string) => void
@@ -21,6 +24,7 @@ export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) 
   const [teams, setTeams] = useState(INITIAL_FOLLOWED_TEAMS)
   const [players, setPlayers] = useState(INITIAL_FOLLOWED_PLAYERS)
   const [query, setQuery] = useState("")
+  const { results: vaultPlayers, loading: vaultLoading, fromApi } = usePlayerVaultSearch(query)
 
   const followedTeamIds = useMemo(() => new Set(teams.map((t) => t.id)), [teams])
   const followedPlayerIds = useMemo(() => new Set(players.map((p) => p.id)), [players])
@@ -35,13 +39,29 @@ export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) 
           matchesQuery(t.city, q) ||
           matchesQuery(t.abbr, q)),
     ).slice(0, 6)
-    const playerHits = SEARCHABLE_PLAYERS.filter(
-      (p) =>
-        !followedPlayerIds.has(p.id) &&
-        (matchesQuery(p.name, q) || matchesQuery(p.teamAbbr, q)),
-    ).slice(0, 8)
+
+    let playerHits: FavoritePlayer[] = []
+    if (USE_STAGING_API && vaultLoading) {
+      playerHits = []
+    } else if (USE_STAGING_API && fromApi) {
+      playerHits = vaultPlayers
+        .filter((p) => !followedPlayerIds.has(p.id))
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          teamAbbr: p.teamAbbr,
+        }))
+        .slice(0, 12)
+    } else {
+      playerHits = SEARCHABLE_PLAYERS.filter(
+        (p) =>
+          !followedPlayerIds.has(p.id) &&
+          (matchesQuery(p.name, q) || matchesQuery(p.teamAbbr, q)),
+      ).slice(0, 8)
+    }
+
     return { teams: teamHits, players: playerHits }
-  }, [query, followedTeamIds, followedPlayerIds])
+  }, [query, followedTeamIds, followedPlayerIds, vaultPlayers, vaultLoading, fromApi])
 
   const addTeam = (team: FavoriteTeam) => {
     setTeams((prev) => [...prev, team])
@@ -64,10 +84,11 @@ export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) 
         <div className="flex items-center gap-2">
           <Star className="h-5 w-5 text-ds-accent" />
           <h1 className="text-lg font-semibold">Following</h1>
+          <StagingBadge show={fromApi} />
         </div>
         <p className="mt-1 text-sm text-ds-muted">
           Teams and players you follow — including those not on tonight&apos;s live board. Search
-          to add more.
+          the vault to add any player.
         </p>
         <div className="relative mt-4 max-w-xl">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ds-muted" />
@@ -80,7 +101,12 @@ export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) 
           />
           {showSearch && (
             <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-64 overflow-y-auto rounded-xl border border-ds-border bg-ds-panel shadow-xl">
-              {searchResults.teams.length === 0 && searchResults.players.length === 0 ? (
+              {vaultLoading && USE_STAGING_API && (
+                <p className="px-4 py-3 text-sm text-ds-muted">Searching vault…</p>
+              )}
+              {!vaultLoading &&
+              searchResults.teams.length === 0 &&
+              searchResults.players.length === 0 ? (
                 <p className="px-4 py-3 text-sm text-ds-muted">No matches — try another name</p>
               ) : (
                 <>

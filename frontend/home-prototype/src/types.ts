@@ -1,4 +1,4 @@
-export type NavPage = "analyzer" | "dashboard" | "social" | "favorites"
+export type NavPage = "analyzer" | "dashboard" | "social" | "favorites" | "players"
 
 export type FollowKind = "team" | "player"
 
@@ -21,7 +21,7 @@ export interface FavoritePlayer {
 
 export type DetailTarget =
   | { type: "game"; id: string }
-  | { type: "player"; id: string }
+  | { type: "player"; id: string; season?: string }
   | { type: "player-game"; playerId: string; gameId: string }
   | { type: "team"; id: string }
   | null

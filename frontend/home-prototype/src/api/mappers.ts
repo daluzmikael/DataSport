@@ -124,6 +124,23 @@ export interface PlayerGameSnapshot {
   nbaGameId: string
 }
 
+/** Build a profile shell from staged season-stats row (vault player library). */
+export function playerProfileFromSeasonStats(
+  nbaId: string,
+  row: Record<string, unknown>,
+): PlayerLive {
+  const name = String(pick(row, "PLAYER_NAME", "player_name") ?? "Player")
+  const teamAbbr = String(pick(row, "TEAM_ABBREVIATION", "team_abbreviation") ?? "—")
+  const base = stubPlayerForStaging(nbaId, name, teamAbbr)
+  const pts = parseFloat(String(pick(row, "PTS") ?? ""))
+  const gp = parseFloat(String(pick(row, "GP") ?? ""))
+  const seasonAvgGameScore =
+    !Number.isNaN(pts) && !Number.isNaN(gp) && gp > 0
+      ? Math.round((pts / gp) * 10) / 10
+      : 0
+  return { ...base, seasonAvgGameScore }
+}
+
 export function stubPlayerForStaging(nbaId: string, name: string, teamAbbr = "—"): PlayerLive {
   return {
     id: `nba-${nbaId}`,
@@ -514,51 +531,13 @@ export function mapCareerTotalsForAccolades(
   return Object.keys(out).length ? out : undefined
 }
 
-const PER36_KEYS = [
-  "pts",
-  "fgm",
-  "fga",
-  "fg3m",
-  "fg3a",
-  "ftm",
-  "fta",
-  "oreb",
-  "dreb",
-  "reb",
-  "ast",
-  "stl",
-  "blk",
-  "tov",
-  "pf",
-] as const
-
-function scaleCountingStats(
-  values: Record<string, string | number>,
-  scale: number,
+function stagedRateAverages(
+  row: Record<string, unknown>,
+  expectedPerMode: "Per36" | "Per100",
 ): Record<string, string | number> {
-  const out: Record<string, string | number> = {}
-  for (const key of PER36_KEYS) {
-    const raw = values[key]
-    const n = typeof raw === "number" ? raw : parseFloat(String(raw))
-    out[key] = Number.isNaN(n) ? "—" : (n * scale).toFixed(1)
-  }
-  return out
-}
-
-export function per36ValuesFromGeneral(values: Record<string, string | number>): Record<string, string | number> {
-  const min = parseMinutes(values.min)
-  if (min <= 0) return scaleCountingStats(values, 0)
-  return scaleCountingStats(values, 36 / min)
-}
-
-export function per100ValuesFromGeneral(
-  values: Record<string, string | number>,
-  pace: number,
-): Record<string, string | number> {
-  const min = parseMinutes(values.min)
-  if (min <= 0 || pace <= 0) return scaleCountingStats(values, 0)
-  const scale = (48 * 100) / (min * pace)
-  return scaleCountingStats(values, scale)
+  const rowMode = String(pick(row, "per_mode", "PER_MODE") ?? "")
+  if (rowMode !== expectedPerMode) return {}
+  return generalValuesFromRow(row, { decimalPlaces: 1 })
 }
 
 function avgNumeric(values: Record<string, string | number>[], key: string, decimals = 1): string {
@@ -629,14 +608,8 @@ export function averagesFromGameLogRows(
       tov_pct: avgNumeric(vals, "tov_pct", 3),
     }
   }
-  if (tab === "per36") {
-    return per36ValuesFromGeneral(averagesFromGameLogRows(rows, "general"))
-  }
-  if (tab === "per100") {
-    const generalAvgs = averagesFromGameLogRows(rows, "general")
-    const advAvgs = averagesFromGameLogRows(rows, "advanced")
-    const pace = parseFloat(String(advAvgs.pace ?? "100"))
-    return per100ValuesFromGeneral(generalAvgs, pace > 0 ? pace : 100)
+  if (tab === "per36" || tab === "per100") {
+    return {}
   }
   return {}
 }
@@ -653,11 +626,10 @@ export function mapSeasonStatsToAverages(
     return advancedValuesFromRow(row)
   }
   if (tab === "per36") {
-    return per36ValuesFromGeneral(generalValuesFromRow(row))
+    return stagedRateAverages(row, "Per36")
   }
   if (tab === "per100") {
-    const pace = parseFloat(String(pick(row, "PACE", "pace", "pacePer40") ?? "100"))
-    return per100ValuesFromGeneral(generalValuesFromRow(row), pace > 0 ? pace : 100)
+    return stagedRateAverages(row, "Per100")
   }
   return {}
 }

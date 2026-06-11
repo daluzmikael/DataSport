@@ -42,6 +42,8 @@ interface PlayerGameLogTableProps {
 
   showSeasonBubbles?: boolean
 
+  initialSeason?: string
+
   onOpenPlayerGame?: (playerId: string, gameId: string) => void
 
   onReference?: (label: string) => void
@@ -59,6 +61,8 @@ export function PlayerGameLogTable({
   liveGameId,
 
   showSeasonBubbles = false,
+
+  initialSeason,
 
   onOpenPlayerGame,
 
@@ -83,7 +87,7 @@ export function PlayerGameLogTable({
     fromApi,
     logsLoading,
     statsLoading,
-  } = usePlayerGameLogTableState(playerId)
+  } = usePlayerGameLogTableState(playerId, initialSeason)
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
 
@@ -195,17 +199,7 @@ export function PlayerGameLogTable({
 
 
 
-  const bubbleHeaderLeft = (
-
-    <>
-
-      <StagingBadge show={fromApi || seasonsFromApi || bubblesFromApi} />
-
-      {seasonSelect}
-
-    </>
-
-  )
+  const bubbleHeaderLeft = seasonSelect
 
 
 
@@ -252,6 +246,8 @@ export function PlayerGameLogTable({
               season={seasonBubbles}
 
               headerLeft={bubbleHeaderLeft}
+
+              bubblesFromApi={bubblesFromApi}
 
             />
 

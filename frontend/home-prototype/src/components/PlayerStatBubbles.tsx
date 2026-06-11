@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react"
 import type { PlayerLive } from "../types"
 
 import type { SeasonBubbleSet } from "../data/playerSeasonAverages"
+import { StagingBadge } from "./StagingBadge"
 
 
 
@@ -172,6 +173,10 @@ interface PlayerStatBubblesProps {
 
   headerLeft?: ReactNode
 
+  /** Season bubbles loaded from staging season-stats (not mock). */
+
+  bubblesFromApi?: boolean
+
 }
 
 
@@ -312,6 +317,11 @@ function BubbleViewNav({
 
 
 
+function bubbleSourceBadge(bubblesFromApi?: boolean) {
+  if (bubblesFromApi) return <StagingBadge show variant="vault" />
+  return <StagingBadge show variant="mock" />
+}
+
 function RateBubbleGrid({ s, label }: { s: SeasonBubbleSet; label: "per36" | "per100" }) {
 
   const pts = label === "per36" ? s.per36Pts : s.per100Pts
@@ -370,6 +380,8 @@ export function PlayerStatBubbles({
 
   headerLeft,
 
+  bubblesFromApi,
+
 }: PlayerStatBubblesProps) {
 
   const [view, setView] = useState<BubbleView>("general")
@@ -385,6 +397,8 @@ export function PlayerStatBubbles({
   const s = season!
 
 
+
+  const sourceBadge = mode === "season" ? bubbleSourceBadge(bubblesFromApi) : null
 
   const nav = <BubbleViewNav view={view} onViewChange={setView} />
 
@@ -412,7 +426,10 @@ export function PlayerStatBubbles({
 
         <div className="mb-2 flex min-h-[28px] items-center gap-3">
 
-          <div className="flex min-w-0 items-center gap-3">{headerLeft}</div>
+          <div className="flex min-w-0 items-center gap-3">
+            {sourceBadge}
+            {headerLeft}
+          </div>
 
           {nav}
 

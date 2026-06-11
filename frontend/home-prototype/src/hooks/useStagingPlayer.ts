@@ -702,7 +702,7 @@ export function useStagingPlayerCareerTotals(playerId: string) {
  * Standard entry point for PlayerGameLogTable + PlayerStatBubbles.
  * Pass any resolvable player id (`1628369`, `nba-1628369`, or mock alias).
  */
-export function usePlayerGameLogTableState(playerId: string) {
+export function usePlayerGameLogTableState(playerId: string, initialSeason?: string) {
   const [tab, setTab] = useState<PlayerGameLogTab>("general")
   const {
     seasons,
@@ -712,16 +712,25 @@ export function usePlayerGameLogTableState(playerId: string) {
     seasonsReady,
   } = usePlayerGameLogSeasons(playerId)
 
-  const [season, setSeason] = useState<string>(defaultSeason)
+  const [season, setSeason] = useState<string>(initialSeason ?? defaultSeason)
   const activePlayer = useRef(playerId)
 
   useEffect(() => {
     if (!seasonsReady) return
     if (activePlayer.current !== playerId) {
       activePlayer.current = playerId
-      setSeason(seasons[0] ?? defaultSeason)
+      const preferred =
+        initialSeason && seasons.includes(initialSeason) ? initialSeason : null
+      setSeason(preferred ?? seasons[0] ?? defaultSeason)
     }
-  }, [playerId, seasonsReady, seasons, defaultSeason])
+  }, [playerId, seasonsReady, seasons, defaultSeason, initialSeason])
+
+  useEffect(() => {
+    if (!seasonsReady || !initialSeason) return
+    if (seasons.includes(initialSeason) && season !== initialSeason) {
+      setSeason(initialSeason)
+    }
+  }, [initialSeason, seasons, seasonsReady, season])
 
   useEffect(() => {
     if (!seasonsReady) return

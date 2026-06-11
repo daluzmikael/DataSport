@@ -1,6 +1,7 @@
 import {
   BarChart3,
   LayoutDashboard,
+  Library,
   MessageSquare,
   Settings,
   Star,
@@ -16,6 +17,7 @@ interface NavRailProps {
 
 const pages: { id: NavPage; icon: typeof MessageSquare; label: string }[] = [
   { id: "analyzer", icon: MessageSquare, label: "Analyzer" },
+  { id: "players", icon: Library, label: "Players" },
   { id: "favorites", icon: Star, label: "Following" },
   { id: "dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { id: "social", icon: Users, label: "Social" },

@@ -176,23 +176,59 @@ def list_seasons() -> dict[str, Any]:
 @router.get("/players/search")
 def search_players(
     q: str = Query(..., min_length=2),
-    season: str = "2024-25",
-    limit: int = Query(25, ge=1, le=100),
+    season: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=100),
 ) -> dict[str, Any]:
-    season = _season(season)
     term = _like_escape(q.strip())
-    rows = _q(
-        f"""
-        SELECT DISTINCT PLAYER_ID, PLAYER_NAME, TEAM_ABBREVIATION, TEAM_ID
-        FROM player_season_stats
-        WHERE season = '{season}'
-          AND season_type = 'Regular Season'
-          AND per_mode = 'PerGame'
-          AND PLAYER_NAME ILIKE '%{term}%'
-        ORDER BY PLAYER_NAME
-        LIMIT {int(limit)}
-        """
-    )
+    if season and season.strip().lower() not in ("", "all"):
+        season = _season(season)
+        rows = _q(
+            f"""
+            SELECT DISTINCT PLAYER_ID, PLAYER_NAME, TEAM_ABBREVIATION, TEAM_ID
+            FROM player_season_stats
+            WHERE season = '{season}'
+              AND season_type = 'Regular Season'
+              AND per_mode = 'PerGame'
+              AND PLAYER_NAME ILIKE '%{term}%'
+            ORDER BY PLAYER_NAME
+            LIMIT {int(limit)}
+            """
+        )
+    else:
+        rows = _q(
+            f"""
+            WITH matched AS (
+                SELECT *
+                FROM player_season_stats
+                WHERE season_type = 'Regular Season'
+                  AND per_mode = 'PerGame'
+                  AND PLAYER_NAME ILIKE '%{term}%'
+            ),
+            agg AS (
+                SELECT
+                    CAST(PLAYER_ID AS VARCHAR) AS PLAYER_ID,
+                    MAX(PLAYER_NAME) AS PLAYER_NAME,
+                    ARG_MAX(TEAM_ABBREVIATION, season) AS TEAM_ABBREVIATION,
+                    ARG_MAX(TEAM_ID, season) AS TEAM_ID,
+                    MIN(season) AS first_season,
+                    MAX(season) AS last_season,
+                    COUNT(DISTINCT season) AS season_count
+                FROM matched
+                GROUP BY CAST(PLAYER_ID AS VARCHAR)
+            )
+            SELECT
+                PLAYER_ID,
+                PLAYER_NAME,
+                TEAM_ABBREVIATION,
+                TEAM_ID,
+                first_season,
+                last_season,
+                season_count
+            FROM agg
+            ORDER BY PLAYER_NAME
+            LIMIT {int(limit)}
+            """
+        )
     return {"success": True, "data": rows}
 
 

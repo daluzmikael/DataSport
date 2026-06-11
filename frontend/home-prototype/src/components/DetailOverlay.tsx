@@ -1,7 +1,7 @@
 import { X } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { GameLogTab } from "../data/teamBoxScoreMock"
-import { getGameDetail, getPlayerProfile, LIVE_FEED } from "../data/mock"
+import { getGameDetail, LIVE_FEED } from "../data/mock"
 import { getTeamProfile } from "../data/teamProfileMock"
 import { teamProfileIdFromAbbr } from "../data/liveDashboardFeed"
 import { PLAY_BY_PLAY } from "../data/otherLiveGamesMock"
@@ -25,6 +25,7 @@ import { mockPlayerIdFromNba, resolveNbaPlayerId } from "../api/nbaIds"
 import { useStagingGame } from "../hooks/useStagingGame"
 import { parseStagingGameId, stagingGameOverlayId } from "../utils/stagingGameId"
 import { useStagingPlayerGame } from "../hooks/useStagingPlayer"
+import { useStagingPlayerProfile } from "../hooks/useStagingPlayerProfile"
 import { StagingBadge } from "./StagingBadge"
 import { AskReferenceButton, ReferencedLabel } from "./AskReferenceButton"
 
@@ -69,19 +70,27 @@ export function DetailOverlay({
     }
   }, [referenceFocusKey])
 
+  const overlayPlayerId =
+    target?.type === "player"
+      ? target.id
+      : target?.type === "player-game"
+        ? target.playerId
+        : null
+  const profileIndexSeason =
+    target?.type === "player" ? target.season : undefined
+  const { player: resolvedPlayer, loading: profileLoading } =
+    useStagingPlayerProfile(overlayPlayerId, profileIndexSeason)
+  const playerRowForHook =
+    resolvedPlayer?.kind === "followed-player" ? resolvedPlayer : null
   const playerGameTargetEarly =
     target?.type === "player-game" ? target : null
-  const playerForGameHook = playerGameTargetEarly
-    ? getPlayerProfile(playerGameTargetEarly.playerId)
-    : null
-  const playerRowForHook =
-    playerForGameHook?.kind === "followed-player" ? playerForGameHook : null
   const stagingNbaGameId =
-    playerGameTargetEarly?.gameId && playerRowForHook
+    playerGameTargetEarly?.gameId &&
+    resolveNbaPlayerId(playerGameTargetEarly.playerId)
       ? parseStagingGameId(playerGameTargetEarly.gameId)
       : null
   const { snapshot: gameSnapshot, fromApi: gameFromApi } = useStagingPlayerGame(
-    playerRowForHook?.id ?? playerGameTargetEarly?.playerId ?? "",
+    overlayPlayerId ?? "",
     playerRowForHook,
     stagingNbaGameId,
   )
@@ -105,17 +114,12 @@ export function DetailOverlay({
       : null
   const playerGameTarget = target.type === "player-game" ? target : null
   const playerProfileTarget = target.type === "player" ? target : null
-  const player = playerGameTarget
-    ? getPlayerProfile(playerGameTarget.playerId)
-    : playerProfileTarget
-      ? getPlayerProfile(playerProfileTarget.id)
-      : null
   const teamProfile =
     target.type === "team" ? getTeamProfile(target.id) ?? null : null
 
   const playerRow =
-    player && player.kind === "followed-player"
-      ? player
+    resolvedPlayer && resolvedPlayer.kind === "followed-player"
+      ? resolvedPlayer
       : gameSnapshot?.player ?? null
   const activeGameId = playerGameTarget?.gameId
 
@@ -197,14 +201,21 @@ export function DetailOverlay({
               </h1>
             </div>
           </>
+        ) : profileLoading && playerProfileTarget ? (
+          <div className="pr-12">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-ds-muted">
+              Player profile
+            </p>
+            <p className="mt-1 text-sm text-ds-muted">Loading from vault…</p>
+          </div>
         ) : playerRow ? (
           <>
             <div className="pr-12">
               <p className="text-[10px] font-bold uppercase tracking-wider text-ds-muted">
                 Player profile
               </p>
-              <p className="mt-0.5 text-xs text-ds-muted">
-                {playerLiveGameId ? (
+              {playerLiveGameId && (
+                <p className="mt-0.5 text-xs text-ds-muted">
                   <button
                     type="button"
                     onClick={() =>
@@ -214,10 +225,8 @@ export function DetailOverlay({
                   >
                     Live: {title}
                   </button>
-                ) : (
-                  `${playerRow.teamAbbr} · 2024-25 season`
-                )}
-              </p>
+                </p>
+              )}
             </div>
             <div className="absolute left-1/2 top-1/2 flex max-w-[calc(100%-7rem)] -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-3">
               <h1 className="text-center text-2xl font-bold tracking-tight sm:text-3xl">
@@ -328,9 +337,13 @@ export function DetailOverlay({
             onAsk={focusAskBar}
           />
         )}
+        {profileLoading && playerProfileTarget && !playerRow && (
+          <p className="py-16 text-center text-sm text-ds-muted">Loading player profile…</p>
+        )}
         {playerRow && playerProfileTarget && (
           <PlayerProfileDetail
             player={playerRow}
+            initialSeason={playerProfileTarget.season}
             onOpenPlayerGame={onOpenPlayerGame}
             onReference={onReference}
             onAsk={focusAskBar}

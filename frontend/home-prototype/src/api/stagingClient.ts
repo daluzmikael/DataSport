@@ -47,6 +47,15 @@ function stagingUrl(path: string, params?: Record<string, string | number>): str
   return url.toString()
 }
 
+function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === "AbortError") ||
+    (err instanceof Error && err.name === "AbortError")
+  )
+}
+
+const inflightGets = new Map<string, Promise<StagingResponse<unknown> | null>>()
+
 async function stagingGetFull<T>(
   path: string,
   params?: Record<string, string | number>,
@@ -56,27 +65,42 @@ async function stagingGetFull<T>(
   const retries = options?.retries ?? 0
   const url = stagingUrl(path, params)
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(url, { signal: options?.signal })
-      if (!res.ok) {
+  const run = async (): Promise<StagingResponse<T> | null> => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(url, { signal: options?.signal })
+        if (!res.ok) {
+          if (attempt < retries) {
+            await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
+            continue
+          }
+          return null
+        }
+        return (await res.json()) as StagingResponse<T>
+      } catch (err) {
+        if (options?.signal?.aborted || isAbortError(err)) return null
         if (attempt < retries) {
-          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)))
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)))
           continue
         }
         return null
       }
-      return (await res.json()) as StagingResponse<T>
-    } catch (err) {
-      if (options?.signal?.aborted) return null
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)))
-        continue
-      }
-      return null
     }
+    return null
   }
-  return null
+
+  // React Strict Mode double-mounts share one in-flight request per URL.
+  if (!options?.signal) {
+    const existing = inflightGets.get(url)
+    if (existing) return existing as Promise<StagingResponse<T> | null>
+    const promise = run().finally(() => {
+      inflightGets.delete(url)
+    })
+    inflightGets.set(url, promise as Promise<StagingResponse<unknown> | null>)
+    return promise
+  }
+
+  return run()
 }
 
 async function stagingGet<T>(path: string, params?: Record<string, string | number>): Promise<T | null> {
@@ -168,13 +192,18 @@ export async function fetchGameBoxScore(nbaGameId: string) {
   }>(`/api/staging/games/${gid}/box-score`)
 }
 
-export async function fetchPlayerGameLogsWithMeta(
+export type GameLogsFetchOutcome =
+  | { kind: "ok"; data: Record<string, unknown>[] }
+  | { kind: "empty" }
+  | { kind: "failed" }
+
+export async function fetchPlayerGameLogsOutcome(
   playerId: string,
   season: string,
   seasonType = "Regular Season",
   limit = 500,
-  options?: { signal?: AbortSignal; includeAdvanced?: boolean },
-) {
+  options?: { includeAdvanced?: boolean },
+): Promise<GameLogsFetchOutcome> {
   const json = await stagingGetFull<Record<string, unknown>[]>(
     `/api/staging/players/${playerId}/game-logs`,
     {
@@ -183,12 +212,30 @@ export async function fetchPlayerGameLogsWithMeta(
       limit,
       include_advanced: options?.includeAdvanced ? "true" : "false",
     },
-    { signal: options?.signal, retries: 3 },
+    { retries: 2 },
   )
-  if (!json) return null
+  if (!json) return { kind: "failed" }
   const rows = filterGameLogRecords(json.data)
-  if (!rows.length) return null
-  return { ...json, data: rows, meta: { ...json.meta, count: rows.length } }
+  if (!rows.length) return { kind: "empty" }
+  return { kind: "ok", data: rows }
+}
+
+export async function fetchPlayerGameLogsWithMeta(
+  playerId: string,
+  season: string,
+  seasonType = "Regular Season",
+  limit = 500,
+  options?: { signal?: AbortSignal; includeAdvanced?: boolean },
+) {
+  const outcome = await fetchPlayerGameLogsOutcome(playerId, season, seasonType, limit, {
+    includeAdvanced: options?.includeAdvanced,
+  })
+  if (outcome.kind !== "ok") return null
+  return {
+    success: true,
+    data: outcome.data,
+    meta: { season, season_type: seasonType, count: outcome.data.length },
+  }
 }
 
 export async function fetchStagingSeasons() {
@@ -196,7 +243,12 @@ export async function fetchStagingSeasons() {
 }
 
 export async function fetchPlayerCareer(playerId: string) {
-  return stagingGet<Record<string, unknown>[]>(`/api/staging/players/${playerId}/career`)
+  const json = await stagingGetFull<Record<string, unknown>[]>(
+    `/api/staging/players/${playerId}/career`,
+    undefined,
+    { retries: 2 },
+  )
+  return json?.data ?? null
 }
 
 export async function fetchPlayerShotZones(

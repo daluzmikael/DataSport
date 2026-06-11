@@ -485,6 +485,35 @@ export function mapPlayerCareerToRows(
   return { rows, averages }
 }
 
+const ACCOLADE_CAREER_KEYS: Record<string, string> = {
+  MIN: "min",
+  PTS: "pts",
+  REB: "reb",
+  FGM: "fgm",
+  AST: "ast",
+  FG3M: "fg3m",
+  STL: "stl",
+  BLK: "blk",
+}
+
+export function mapCareerTotalsForAccolades(
+  career: Record<string, unknown>[],
+): Record<string, number> | undefined {
+  const regTotals = findCareerDataset(
+    career,
+    CAREER_REG_TOTALS_DS,
+    "CareerTotalsRegularSeason",
+  )
+  if (!regTotals) return undefined
+
+  const out: Record<string, number> = {}
+  for (const [apiKey, mockKey] of Object.entries(ACCOLADE_CAREER_KEYS)) {
+    const val = parseCareerNumber(pick(regTotals, apiKey))
+    if (val != null) out[mockKey] = val
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
 const PER36_KEYS = [
   "pts",
   "fgm",

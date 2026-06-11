@@ -1,3 +1,4 @@
+import { canonicalMockPlayerId } from "../api/nbaIds"
 import { getCareerLogs } from "./playerCareerLogMock"
 
 export interface PlayerAccoladeStat {
@@ -87,13 +88,15 @@ function buildDraftSlot(profile: PlayerAccoladeProfile): PlayerAccoladeStat {
   }
 }
 
-function careerTotalsFromLogs(playerId: string): Record<string, number> | undefined {
-  const rows = getCareerLogs(playerId).general
+function careerTotalsFromMockLogs(playerId: string): Record<string, number> | undefined {
+  const key = canonicalMockPlayerId(playerId)
+  if (key !== "player-tatum" && !key.startsWith("player-tatum")) return undefined
+  const rows = getCareerLogs(key).general
   const totals = rows.find((r) => r.id === "career-reg-tot")
   if (!totals) return undefined
   const out: Record<string, number> = {}
-  for (const [key, val] of Object.entries(totals.values)) {
-    if (typeof val === "number") out[key] = val
+  for (const [entryKey, val] of Object.entries(totals.values)) {
+    if (typeof val === "number") out[entryKey] = val
   }
   return out
 }
@@ -226,15 +229,33 @@ const TATUM_PROFILE: PlayerAccoladeProfile = {
   allRookie: "1st",
 }
 
+const DURANT_PROFILE: PlayerAccoladeProfile = {
+  championships: { count: 2, years: "2017, 2018" },
+  finalsMvp: 2,
+  mvp: 1,
+  allNba: { total: 10, firstTeam: 6, secondTeam: 4 },
+  allStar: 15,
+  draft: { pick: 2, year: 2007 },
+  allRookie: "1st",
+  roty: true,
+}
+
 const DEFAULT_PROFILE: PlayerAccoladeProfile = {
   draft: "undrafted",
 }
 
-export function getPlayerAccolades(playerId: string): PlayerAccoladeStat[] {
-  const profile =
-    playerId === "player-tatum" || playerId.startsWith("player-tatum")
-      ? TATUM_PROFILE
-      : DEFAULT_PROFILE
-  const careerTotals = careerTotalsFromLogs(playerId)
+function resolveAccoladeProfile(playerId: string): PlayerAccoladeProfile {
+  const key = canonicalMockPlayerId(playerId)
+  if (key === "player-tatum" || key.startsWith("player-tatum")) return TATUM_PROFILE
+  if (key === "player-durant" || key.startsWith("player-durant")) return DURANT_PROFILE
+  return DEFAULT_PROFILE
+}
+
+export function getPlayerAccolades(
+  playerId: string,
+  careerTotalsOverride?: Record<string, number>,
+): PlayerAccoladeStat[] {
+  const profile = resolveAccoladeProfile(playerId)
+  const careerTotals = careerTotalsOverride ?? careerTotalsFromMockLogs(playerId)
   return buildAccoladeRow(profile, careerTotals)
 }

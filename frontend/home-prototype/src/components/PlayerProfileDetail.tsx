@@ -1,5 +1,6 @@
 import { getPlayerSeasonInsight } from "../data/playerAnalyzerMock"
 import { getPlayerAccolades } from "../data/playerAccoladesMock"
+import { useStagingPlayerCareerTotals } from "../hooks/useStagingPlayer"
 import { generateMockShots } from "../data/mockShots"
 import { LIVE_FEED } from "../data/mock"
 import type { PlayerLive } from "../types"
@@ -17,7 +18,8 @@ interface PlayerProfileDetailProps {
 }
 
 function PlayerAccoladesRow({ playerId }: { playerId: string }) {
-  const stats = getPlayerAccolades(playerId)
+  const { careerTotals } = useStagingPlayerCareerTotals(playerId)
+  const stats = getPlayerAccolades(playerId, careerTotals)
 
   return (
     <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
@@ -76,6 +78,7 @@ export function PlayerProfileDetail({
       </section>
 
       <PlayerGameLogTable
+        key={player.id}
         playerId={player.id}
         showSeasonBubbles
         showLiveRow={Boolean(liveGameId)}

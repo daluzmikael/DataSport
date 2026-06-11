@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useRef } from "react"
 
 import {
 
@@ -6,17 +6,13 @@ import {
 
   TAB_CONFIG,
 
-  type GameLogColumn,
-
 } from "../data/playerGameLogMock"
 
 import {
 
   CAREER_LOG_VALUE,
 
-  usePlayerGameLogSeasons,
-
-  useStagingPlayerGameLog,
+  usePlayerGameLogTableState,
 
   type PlayerGameLogTab,
 
@@ -44,69 +40,11 @@ interface PlayerGameLogTableProps {
 
   liveGameId?: string
 
-  hideSeasonAvgRow?: boolean
-
   showSeasonBubbles?: boolean
 
   onOpenPlayerGame?: (playerId: string, gameId: string) => void
 
   onReference?: (label: string) => void
-
-}
-
-
-
-function AverageCells({
-
-  columns,
-
-  averages,
-
-}: {
-
-  columns: GameLogColumn[]
-
-  averages: Record<string, string | number>
-
-}) {
-
-  return (
-
-    <>
-
-      {columns.map((col) => {
-
-        const isGame = col.id === "game"
-
-        const display = isGame ? "Season avg" : (averages[col.id] ?? "—")
-
-        return (
-
-          <td
-
-            key={col.id}
-
-            className={`whitespace-nowrap px-2.5 py-2 ${
-
-              isGame ? "font-sans text-xs font-semibold text-ds-accent" : "font-semibold"
-
-            }`}
-
-            style={{ minWidth: col.minWidth }}
-
-          >
-
-            {display}
-
-          </td>
-
-        )
-
-      })}
-
-    </>
-
-  )
 
 }
 
@@ -120,8 +58,6 @@ export function PlayerGameLogTable({
 
   liveGameId,
 
-  hideSeasonAvgRow = false,
-
   showSeasonBubbles = false,
 
   onOpenPlayerGame,
@@ -130,92 +66,36 @@ export function PlayerGameLogTable({
 
 }: PlayerGameLogTableProps) {
 
-  const [tab, setTab] = useState<PlayerGameLogTab>("general")
-
   const {
+    tab,
+    setTab,
+    season,
+    setSeason,
     seasons,
-    defaultSeason,
-    fromApi: seasonsFromApi,
     seasonsLoading,
     seasonsReady,
-  } = usePlayerGameLogSeasons(playerId)
-
-  const [season, setSeason] = useState<string>(defaultSeason)
-
-  const avgScrollRef = useRef<HTMLDivElement>(null)
-
-  const tableScrollRef = useRef<HTMLDivElement>(null)
-
-
-
-  const activePlayer = useRef(playerId)
-
-  useEffect(() => {
-
-    if (!seasonsReady) return
-
-    if (activePlayer.current !== playerId) {
-
-      activePlayer.current = playerId
-
-      setSeason(seasons[0] ?? defaultSeason)
-
-    }
-
-  }, [playerId, seasonsReady, seasons, defaultSeason])
-
-
-
-  useEffect(() => {
-
-    if (!seasonsReady) return
-
-    if (!seasons.includes(season) && season !== CAREER_LOG_VALUE) {
-
-      setSeason(seasons[0] ?? defaultSeason)
-
-    }
-
-  }, [seasons, season, defaultSeason, seasonsReady])
-
-
-
-  const isCareer = season === CAREER_LOG_VALUE
-
-  const { columns } = TAB_CONFIG[tab]
-
-  const {
+    seasonsFromApi,
+    isCareer,
+    latestSeason,
     rows: stagingRows,
-    averages,
     bubbles: seasonBubbles,
     bubblesFromApi,
     fromApi,
     logsLoading,
     statsLoading,
-    logsError,
-  } = useStagingPlayerGameLog(playerId, season, tab, isCareer, seasonsReady)
+  } = usePlayerGameLogTableState(playerId)
 
-  const latestSeason = seasons[0]
+  const tableScrollRef = useRef<HTMLDivElement>(null)
 
-  const rows = stagingRows.map((row) =>
+  const { columns } = TAB_CONFIG[tab]
+
+  const rows = (stagingRows ?? []).map((row) =>
 
     !isCareer && showLiveRow && season === latestSeason ? row : { ...row, isLive: false },
 
   )
 
 
-
-  const syncScroll = (source: "avg" | "table", scrollLeft: number) => {
-
-    const other = source === "avg" ? tableScrollRef.current : avgScrollRef.current
-
-    if (other && other.scrollLeft !== scrollLeft) {
-
-      other.scrollLeft = scrollLeft
-
-    }
-
-  }
 
 
 
@@ -421,45 +301,11 @@ export function PlayerGameLogTable({
 
 
 
-      {!hideSeasonAvgRow && !isCareer && averages && (
-
-        <div
-
-          ref={avgScrollRef}
-
-          className="overflow-x-auto border-b border-ds-border bg-ds-raised/70"
-
-          onScroll={(e) => syncScroll("avg", e.currentTarget.scrollLeft)}
-
-        >
-
-          <table className="w-max min-w-full border-collapse text-left text-xs font-mono tabular-nums text-ds-text">
-
-            <tbody>
-
-              <tr>
-
-                <AverageCells columns={columns} averages={averages} />
-
-              </tr>
-
-            </tbody>
-
-          </table>
-
-        </div>
-
-      )}
-
-
-
       <div
 
         ref={tableScrollRef}
 
         className="max-h-[min(420px,50vh)] overflow-auto"
-
-        onScroll={(e) => syncScroll("table", e.currentTarget.scrollLeft)}
 
       >
 
@@ -505,7 +351,7 @@ export function PlayerGameLogTable({
 
                 >
 
-                  Loading game logs…
+                  {isCareer ? "Loading career summaries…" : "Loading game logs…"}
 
                 </td>
 
@@ -525,9 +371,9 @@ export function PlayerGameLogTable({
 
                 >
 
-                  {logsError
-                    ? `Could not load game logs for ${season}. Check that the backend is running on port 8000.`
-                    : `No games found for ${isCareer ? "career" : season}.`}
+                  {isCareer
+                    ? "No career summaries found for this player."
+                    : `No games found for ${season}.`}
 
                 </td>
 

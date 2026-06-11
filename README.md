@@ -1,251 +1,226 @@
-# Team45 Senior Design
+# DataSport
 
-Team45 Senior Design is an NBA analytics assistant that lets users ask basketball questions in plain English and receive stat-backed answers. The project combines a web chat interface, dashboard visualizations, SQL generation, PostgreSQL data access, and GPT-powered analysis.
+DataSport is an NBA analytics platform that lets users explore basketball stats through natural-language questions, dashboards, and rich player/team profiles. The system can answer questions like “What was LeBron’s best season between 2003 and 2022?” or “Who are the top 10 scorers this season?” by generating SQL, querying the data layer, and returning analyst-style text or charts.
 
-The goal is to make NBA data easier for regular users to explore without needing to know SQL, database table names, or advanced analytics tooling. A user can open the site, ask a question such as "What was LeBron's best season from 2003 to 2022?" or "Show me the top 10 scorers this season," and the system will generate the database query, fetch the data, and return either a written analyst-style answer or a chart.
+The project is built around a local **stats vault**: NBA.com data is ingested with `nba_api`, staged into unified Parquet tables, and queried at runtime through **DuckDB**. A legacy **PostgreSQL (RDS)** path remains for older deployments.
 
-## How A User Uses It
+## What You Can Do
 
-The app has two main modes:
+**Analyst mode** — chat-style Q&A with stat-backed answers.
 
-- `Analyst`: a chat-style experience for asking NBA stat questions and receiving written explanations.
-- `Dashboards`: a visualization-focused page for generating charts such as leaderboards, comparisons, trends, skill profiles, and shot charts.
+**Dashboard mode** — generate charts (leaderboards, comparisons, trends, skill profiles, shot charts).
 
-Typical usage:
+**Profiles & game data** — the home prototype loads real season stats, game logs, career data, standings, and leaders from the staging API when the backend is running.
 
-1. Open the frontend in a browser.
-2. Choose `Analyst` or `Dashboards`.
-3. Type a basketball question in natural language.
-4. Review the returned table, summary, or visualization.
-5. Continue the conversation or start a new chat.
+Typical flow:
+
+1. Open a frontend in the browser.
+2. Choose Analyst, Dashboards, or browse player/team profiles.
+3. Ask a question or open a detail view.
+4. Review tables, summaries, or visualizations.
+5. Continue the conversation or explore related stats.
+
+## Architecture
+
+```text
+nba_api  →  data/raw/  →  ingestion/stage_all  →  data/staging/*.parquet
+                                                          ↓
+                                              DuckDB views (Executer/)
+                                                          ↓
+                    Interpreter (NL → SQL)  →  FastAPI  →  frontends
+```
+
+**AI layer (optional):** OpenAI generates SQL and natural-language analysis. Staging read endpoints and DuckDB queries work without an API key.
+
+**Auth (optional):** Firebase powers signup, login, and saved chat history in the production-style frontend.
 
 ## Tech Stack
 
-Frontend:
-
-- `Next.js` 15
-- `React` 19
-- `TypeScript`
-- `Tailwind CSS`
-- `Radix UI`
-- `Recharts`
-- `Firebase` client SDK for auth/history features
-
-Backend:
-
-- `Python`
-- `FastAPI`
-- `Uvicorn`
-- `Pandas` / `NumPy`
-- `Psycopg2`
-- `SQLGlot`
-- `OpenAI` API
-- `Firebase Admin`
-- `Pyrebase`
-
-Database and services:
-
-- AWS RDS PostgreSQL for NBA stats data
-- OpenAI/GPT for SQL generation and natural-language analysis
-- Firebase for authentication and saved chat history
+| Layer | Technologies |
+|-------|----------------|
+| Backend | Python, FastAPI, Uvicorn, Pandas, DuckDB, SQLGlot, OpenAI SDK |
+| Data ingestion | `nba-api`, Parquet, checkpointed pull/stage pipeline |
+| Data query | DuckDB over staging Parquet (default); PostgreSQL via psycopg2 (legacy) |
+| Home prototype | Vite, React 19, TypeScript, Tailwind CSS |
+| AI analyst app | Next.js 15, React 19, TypeScript, Tailwind, Radix UI, Recharts, Firebase |
 
 ## Project Structure
 
 ```text
-Team45seniordesign/
+DataSport/
   backend/
-    main.py                    # FastAPI entrypoint
-    Analyzer/                  # Converts query results into user-facing analysis
-    DashboardBackend/          # Dashboard query + chart generation flow
-    Executer/                  # Database connection, SQL validation, query execution
-    Interpreter/               # Natural-language to SQL flow and SQL safeguards
-    requirements.txt           # Python backend dependencies
+    main.py                 # FastAPI entrypoint
+    api/                    # Staging read routes (/api/staging/...)
+    Analyzer/               # Query results → user-facing analysis
+    DashboardBackend/       # Dashboard query + chart generation
+    Executer/               # SQL validation, DuckDB / PostgreSQL execution
+    Interpreter/            # Natural language → SQL (staging + legacy RDS)
+    ingestion/              # Pull from NBA API, stage into Parquet
+    data/
+      raw/                  # Per-endpoint pulls (gitignored)
+      staging/              # Unified Parquet tables (gitignored)
+      manifests/            # Pull checkpoints, game ID lists
   frontend/
-    ai_analyst/
-      app/                     # Next.js App Router pages
-      components/              # UI and chart components
-      lib/                     # Frontend helpers
-      package.json             # Frontend dependencies and scripts
+    home-prototype/         # Vite UI — profiles wired to staging API
+    ai_analyst/             # Next.js app — Analyst + Dashboards + Firebase auth
   README.md
 ```
 
+## Staging Tables
+
+After ingestion and staging, DuckDB exposes these views (when Parquet files exist):
+
+| Phase | Tables |
+|-------|--------|
+| 1 | `player_season_stats`, `team_season_stats`, `team_standings`, `player_shot_zones`, `team_shot_zones` |
+| 2 | `player_game_logs`, `team_game_logs` |
+| 3 | `game_context`, `player_game_advanced`, `team_game_advanced` |
+| 4 | `player_career` |
+| 5 | `court_shots` |
+
+See `backend/ingestion/README.md` for pull and stage commands.
+
 ## Requirements
 
-You need these installed locally or in venv:
-
-- Python 3.13 recommended
-- Node.js 20 recommended
+- Python 3.11+ (3.13 recommended)
+- Node.js 20+
 - npm
 - Git
-- Access to the required `.env` values
 
-Backend virtual environment requirements:
+**Backend** — virtual environment at `backend/.venv`, dependencies from `backend/requirements.txt`:
 
-- The backend must run inside a Python virtual environment named `.venv` inside `backend/`.
-- Install backend packages from `backend/requirements.txt`.
-- Current backend Python dependencies are:
-  - `flask`
-  - `flask-cors`
-  - `requests`
-  - `psycopg2-binary`
-  - `python-dotenv`
-  - `openai`
-  - `pydantic`
-  - `uvicorn`
-  - `fastapi`
-  - `pandas`
-  - `numpy`
-  - `pyrebase4`
-  - `firebase-admin`
-  - `sqlglot`
+- fastapi, uvicorn, pandas, pyarrow, duckdb, nba-api, openai, sqlglot, psycopg2-binary, firebase-admin, pyrebase4, and others
 
-Frontend requirements:
+**Optional services:**
 
-- Install frontend packages from `frontend/ai_analyst/package.json`.
-- Run the frontend from `frontend/ai_analyst/`, not from the root folder.
-
-Environment requirements:
-
-- `backend/.env` must contain the project secrets and service credentials.
-- At minimum, the backend needs OpenAI/GPT credentials and database credentials.
-- Firebase credentials are required for authentication/history features.
-- The AWS RDS PostgreSQL database must be available and reachable.
+- `OPENAI_API_KEY` — Analyst, Dashboards, and NL→SQL (not required for staging API alone)
+- Firebase credentials — auth and chat history in `ai_analyst`
+- PostgreSQL — only if `DATA_BACKEND=postgres` with `POSTGRES_*` env vars
 
 ## Running Locally
 
-Open two terminals: one for the backend and one for the frontend.
+Use two terminals: backend first, then a frontend.
 
-### 1. Clone Or Pull The Project
+### 1. Backend setup
 
-```bash
-git clone https://github.com/daluzmikael/Team45seniordesign.git
-cd Team45seniordesign
-```
-
-If you already have the project:
-
-```bash
-cd /Users/mikaeldaluz/Documents/sendes/Team45seniordesign
-git pull
-```
-
-### 2. Set Up Backend Environment
-
-From the project root:
-
-```bash
-cd backend
-rm -rf .venv
-python3.13 -m venv .venv
-source .venv/bin/activate
+```powershell
+cd DataSport\backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Make sure `backend/.env` exists before starting the backend. If you do not have the required `.env` values, ask a project member for them.
+Build staging data (start with phase 1; full pipeline takes time):
 
-### 3. Start The Backend
+```powershell
+python -m ingestion.stage_all --phase 1
+```
 
-From `backend/` with the venv activated:
+Optional `.env` in `backend/`:
 
-```bash
+```env
+DATA_BACKEND=duckdb
+OPENAI_API_KEY=sk-...
+STAGING_DATA_DIR=C:/path/to/DataSport/backend/data/staging
+```
+
+### 2. Start the backend
+
+```powershell
+cd DataSport\backend
+.\.venv\Scripts\Activate.ps1
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The backend should be available at:
+- API: http://127.0.0.1:8000  
+- Docs: http://127.0.0.1:8000/docs  
+- Staging health: http://127.0.0.1:8000/api/staging/health  
 
-```text
-http://127.0.0.1:8000
-```
+The server starts without `OPENAI_API_KEY`; AI routes fail at request time until a key is set.
 
-You can check the FastAPI docs at:
+### 3. Home prototype (recommended for vault data)
 
-```text
-http://127.0.0.1:8000/docs
-```
-
-### 4. Install Frontend Dependencies
-
-In a second terminal:
-
-```bash
-cd /Users/mikaeldaluz/Documents/sendes/Team45seniordesign/frontend/ai_analyst
+```powershell
+cd DataSport\frontend\home-prototype
 npm install
+copy .env.example .env
+npm run dev
 ```
 
-### 5. Start The Frontend
+Open the URL Vite prints (usually http://localhost:5173). Use **Continue as demo user** on the login screen.
 
-From `frontend/ai_analyst/`:
+With `VITE_USE_STAGING_API=true`, player/team profiles show a green **Vault** badge when live data loads.
 
-```bash
-npm run dev -- --hostname 127.0.0.1 --port 3000
-```
+### 4. AI analyst app (Analyst + Dashboards)
 
-The frontend should be available at:
-
-```text
-http://127.0.0.1:3000
-```
-
-## Restarting After A Pull
-
-If you pulled new code and need to restart both servers:
-
-Backend:
-
-```bash
-cd /Users/mikaeldaluz/Documents/sendes/Team45seniordesign/backend
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Frontend:
-
-```bash
-cd /Users/mikaeldaluz/Documents/sendes/Team45seniordesign/frontend/ai_analyst
+```powershell
+cd DataSport\frontend\ai_analyst
 npm install
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
-If a port is already in use:
+Open http://127.0.0.1:3000. Requires OpenAI and Firebase configuration for full functionality.
 
-```bash
-lsof -ti tcp:8000 | xargs kill
-lsof -ti tcp:3000 | xargs kill
+## Data Ingestion (optional)
+
+Pull raw NBA stats from stats.nba.com:
+
+```powershell
+cd DataSport\backend
+python -m ingestion.pull_all --phase 1 --log-file
+python -m ingestion.pull_all --phase all --log-file
 ```
+
+Stage into unified tables:
+
+```powershell
+python -m ingestion.stage_all --phase all
+```
+
+After re-staging, restart the backend or `POST /api/staging/refresh`.
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `DATA_BACKEND` | `duckdb` (default) or `postgres` |
+| `STAGING_DATA_DIR` | Override path to staging Parquet folder |
+| `OPENAI_API_KEY` | GPT for SQL generation and analysis |
+| `STAGING_SQL_MODEL` | Model for staging SQL path (default `gpt-5.4-mini`) |
+| `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Legacy RDS connection |
+| `LOG_LEVEL` | Backend log level (default `INFO`) |
+
+## API Overview
+
+| Route | Description |
+|-------|-------------|
+| `POST /api/analysis` | Analyst chat — NL question → SQL → answer |
+| `POST /api/dashboards` | Dashboard chart generation |
+| `GET /api/staging/*` | Player/team search, stats, game logs, career, standings |
+| `POST /api/signup`, `POST /api/login` | Firebase auth |
+| `GET /api/history` | Saved conversations |
 
 ## Common Issues
 
-If the frontend shows a missing `.next` module or stale chunk error, clear the Next.js build cache:
+**Backend crashes on import with OpenAI error** — set `OPENAI_API_KEY`, or use a build where the client is created lazily; staging routes do not need a key.
 
-```bash
-cd /Users/mikaeldaluz/Documents/sendes/Team45seniordesign/frontend/ai_analyst
-rm -rf .next
-npm run dev -- --hostname 127.0.0.1 --port 3000
+**No staging data** — run `python -m ingestion.stage_all --phase 1` and confirm `backend/data/staging/*.parquet` exists.
+
+**Frontend stale Next.js chunks** — delete `.next` and restart:
+
+```powershell
+cd DataSport\frontend\ai_analyst
+Remove-Item -Recurse -Force .next
+npm run dev
 ```
 
-If the backend venv points to an old folder after renaming or moving the project, recreate it:
+**Port in use (Windows)** — find and stop the process using 8000 or 3000, or pick another port.
 
-```bash
-cd /Users/mikaeldaluz/Documents/sendes/Team45seniordesign/backend
-rm -rf .venv
-python3.13 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
+**Broken venv after moving the repo** — delete `backend/.venv` and recreate it.
 
-## Authors
+## Further Reading
 
-- Konrad Koc
-- Mikael Daluz
-- Lawrence Mensah
-- Shah Arian
-- Von Lindenthal
-
-## Important Warning
-
-This project will not work without the required GPT/OpenAI key and Firebase credentials. If you do not have those keys, contact the project team.
-
-The backend also depends on the AWS RDS PostgreSQL database. The RDS instance may not always be running or reachable during testing. If the app cannot connect to the database, or if you have any questions about credentials or access, reach out to the project team.
+- `backend/ingestion/README.md` — pull phases, staging, data layout
+- `backend/Executer/README.md` — DuckDB vs PostgreSQL backends
+- `frontend/home-prototype/README.md` — prototype layout and vault wiring

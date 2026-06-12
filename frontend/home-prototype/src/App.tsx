@@ -107,6 +107,7 @@ export default function App() {
           <div className="col-span-3 min-w-0" style={{ gridColumn: "2 / -1" }}>
             <PlayerLibraryPage
               onOpenPlayer={(id) => setDetail({ type: "player", id })}
+              onOpenTeam={(id) => setDetail({ type: "team", id })}
             />
           </div>
         )}

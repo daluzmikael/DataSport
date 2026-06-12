@@ -1,7 +1,6 @@
 import { useRef, useState } from "react"
 import { TAB_CONFIG, type GameLogTab } from "../data/playerGameLogMock"
-import { getTeamSeasonOptions } from "../data/teamSeasonGameLogBuilder"
-import { useStagingTeamGameLog } from "../hooks/useStagingTeam"
+import { useStagingTeamGameLog, useTeamVaultSeason } from "../hooks/useStagingTeam"
 import { teamAbbrsFromGameLabel } from "../utils/analyzerReference"
 import type { TeamProfile } from "../types"
 import { AskReferenceButton } from "./AskReferenceButton"
@@ -22,8 +21,7 @@ export function TeamSeasonGameLogTable({
   onOpenGame,
   onReference,
 }: TeamSeasonGameLogTableProps) {
-  const seasonOptions = getTeamSeasonOptions(profile)
-  const [season, setSeason] = useState(profile.seasonLabel)
+  const { season, setSeason, seasons: seasonOptions, latestSeason } = useTeamVaultSeason(profile)
   const [tab, setTab] = useState<GameLogTab>("general")
   const avgScrollRef = useRef<HTMLDivElement>(null)
   const tableScrollRef = useRef<HTMLDivElement>(null)
@@ -33,9 +31,9 @@ export function TeamSeasonGameLogTable({
     c.id === "game" ? c : c.id === "wl" ? { ...c, label: "W/L" } : c,
   )
   const rows = stagingRows.map((row) =>
-    season === profile.seasonLabel ? row : { ...row, isLive: false },
+    season === latestSeason ? row : { ...row, isLive: false },
   )
-  const isCurrentSeason = season === profile.seasonLabel
+  const isCurrentSeason = season === latestSeason
 
   const syncScroll = (source: "avg" | "table", scrollLeft: number) => {
     const other = source === "avg" ? tableScrollRef.current : avgScrollRef.current

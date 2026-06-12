@@ -1,6 +1,6 @@
 import { SEARCHABLE_TEAMS } from "./favoritesMock"
 import { BOS_FRANCHISE_HISTORY } from "./bosFranchiseHistory"
-import { BOS_FRANCHISE_ACCOLADES, accoladesFromHistory } from "./teamFranchiseAccolades"
+import { getTeamFranchiseAccolades } from "./teamFranchiseFacts"
 import { gameRow, tabGamesFromGeneral } from "./teamSeasonGameLogBuilder"
 import type { TeamProfile } from "../types"
 
@@ -227,7 +227,7 @@ export const TEAM_PROFILES: Record<string, TeamProfile> = {
     history: BOS_HISTORY,
     roster: BOS_ROSTER,
     gameScoreLeaders: BOS_GS_LEADERS,
-    accolades: BOS_FRANCHISE_ACCOLADES,
+    accolades: getTeamFranchiseAccolades("BOS"),
     currentSeason: {
       standing: "1st · East",
       record: "41-17",
@@ -375,27 +375,11 @@ function createStubTeamProfile(meta: {
       { rank: 2, player: "Veteran Wing", season: "2018-19", opponent: "OPP", gameScore: 10.8 },
       { rank: 3, player: "All-Star Guard", season: "2021-22", opponent: "OPP", gameScore: 10.4 },
     ],
-    accolades: accoladesFromHistory([
-      {
-        season: "2022-23",
-        wl: "44-38",
-        values: { pts: 110.2, reb: 42.8, ast: 24.6, fg_pct: ".468", fg3_pct: ".358" },
-      },
-      {
-        season: "2023-24",
-        wl: "48-34",
-        values: { pts: 112.4, reb: 43.2, ast: 25.0, fg_pct: ".472", fg3_pct: ".362" },
-      },
-      {
-        season: "2024-25",
-        wl: "30-25",
-        values: { pts: 111.2, reb: 43.0, ast: 25.2, fg_pct: ".465", fg3_pct: ".364" },
-      },
-    ]),
+    accolades: getTeamFranchiseAccolades(meta.abbr),
     currentSeason: {
-      standing: "8th · East",
-      record: "30-25",
-      bestPlayer: { name: "Starter One", avgGameScore: 6.4 },
+      standing: "—",
+      record: "—",
+      bestPlayer: { name: "—", avgGameScore: 0 },
     },
   }
 }

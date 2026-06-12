@@ -13,11 +13,11 @@ function PfStlBlkBubble({ pf, stl, blk }: { pf: number | string; stl: number | s
 
   return (
 
-    <div className="rounded-lg border border-ds-border bg-ds-panel p-3">
+    <div className="rounded-lg border border-ds-border bg-ds-panel px-2 py-1.5">
 
-      <p className="text-[10px] uppercase tracking-wide text-ds-muted">PF | STL | BLK</p>
+      <p className="text-[9px] uppercase tracking-wide text-ds-muted">PF | STL | BLK</p>
 
-      <p className="mt-1 font-mono text-lg font-bold tabular-nums">
+      <p className="mt-0.5 font-mono text-sm font-bold tabular-nums">
 
         {pf}
 
@@ -63,23 +63,23 @@ function StatBubble({
 
   return (
 
-    <div className="rounded-lg border border-ds-border bg-ds-panel p-3">
+    <div className="rounded-lg border border-ds-border bg-ds-panel px-2 py-1.5">
 
-      <p className="text-[10px] uppercase text-ds-muted">{label}</p>
+      <p className="text-[9px] uppercase text-ds-muted">{label}</p>
 
-      <p className="mt-1 font-mono text-lg font-bold tabular-nums">
+      <p className="mt-0.5 font-mono text-sm font-bold tabular-nums">
 
         {primary}
 
         {secondary && (
 
-          <span className="ml-2 text-sm font-semibold text-ds-muted">{secondary}</span>
+          <span className="ml-1.5 text-xs font-semibold text-ds-muted">{secondary}</span>
 
         )}
 
       </p>
 
-      {subline && <p className="mt-0.5 font-mono text-[11px] text-ds-muted">{subline}</p>}
+      {subline && <p className="mt-0.5 font-mono text-[10px] leading-tight text-ds-muted">{subline}</p>}
 
     </div>
 
@@ -181,7 +181,7 @@ interface PlayerStatBubblesProps {
 
 
 
-const GRID_CLASS = "grid w-1/5 shrink-0 grid-cols-2 gap-3 sm:grid-cols-4"
+const GRID_CLASS = "grid w-1/5 shrink-0 grid-cols-2 gap-2 sm:grid-cols-4"
 
 
 
@@ -424,7 +424,7 @@ export function PlayerStatBubbles({
 
       ) : headerLeft ? (
 
-        <div className="mb-2 flex min-h-[28px] items-center gap-3">
+        <div className="mb-1.5 flex min-h-[24px] items-center gap-2">
 
           <div className="flex min-w-0 items-center gap-3">
             {sourceBadge}

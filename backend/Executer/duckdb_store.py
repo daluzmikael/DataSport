@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -29,9 +30,16 @@ STAGING_VIEWS: dict[str, str] = {
     "team_game_advanced": "team_game_advanced",
     "player_career": "player_career",
     "court_shots": "court_shots",
+    "player_tracking": "player_tracking",
+    "team_tracking": "team_tracking",
+    "lineups": "lineups",
+    "player_on_off": "player_on_off",
+    "player_estimated_metrics": "player_estimated_metrics",
+    "team_estimated_metrics": "team_estimated_metrics",
 }
 
 _conn: duckdb.DuckDBPyConnection | None = None
+_duck_lock = threading.Lock()
 
 
 def default_staging_dir() -> Path:
@@ -156,9 +164,11 @@ def get_db_schema(conn: duckdb.DuckDBPyConnection | None = None) -> str:
         "Slice columns on every table (when present):",
         "  season       — e.g. '2024-25' (career rows use 'CAREER' when available)",
         "  season_type  — 'Regular Season' or 'Playoffs'",
-        "  per_mode     — 'PerGame' or 'Totals' (player career: 'CareerTotals')",
+        "  per_mode     — PerGame, Totals, Per100Possessions, Per36, Per40, …",
+        "  measure_type — Base, Advanced, Usage, Misc, Scoring, Defense (season dash tables)",
+        "  pt_measure_type — Drives, Passing, … (player_tracking / team_tracking)",
         "",
-        "Always filter season / season_type / per_mode in WHERE — do not assume one slice.",
+        "Always filter season / season_type / per_mode / measure_type in WHERE when present.",
         "",
     ]
 
@@ -213,6 +223,29 @@ def get_db_schema(conn: duckdb.DuckDBPyConnection | None = None) -> str:
             "Player shot chart zone grid per season. "
             "Slice: season, season_type. IDs: player_id (string)."
         ),
+        "player_tracking": (
+            "Season player tracking (leaguedashptstats). "
+            "Slice: season, season_type, pt_measure_type, per_mode."
+        ),
+        "team_tracking": (
+            "Season team tracking (leaguedashptstats). "
+            "Slice: season, season_type, pt_measure_type, per_mode."
+        ),
+        "lineups": (
+            "5-man lineup units (leaguedashlineups). "
+            "Slice: season, season_type, group_quantity, measure_type, per_mode."
+        ),
+        "player_on_off": (
+            "Player on/off court summary per team. "
+            "Slice: season, season_type, per_mode. IDs: PLAYER_ID, TEAM_ID."
+        ),
+        "player_estimated_metrics": (
+            "NBA estimated impact (E_NET_RATING, E_OFF_RATING, E_USG_PCT, …). "
+            "Slice: season, season_type."
+        ),
+        "team_estimated_metrics": (
+            "Team NBA estimated impact metrics. Slice: season, season_type."
+        ),
     }
 
     for table in tables:
@@ -248,10 +281,14 @@ def execute_query(
     del timeout_ms  # reserved for future PRAGMA
     logger.info("Executing DuckDB SQL: %s", (sql_query or "")[:600])
     try:
-        df = conn.execute(sql_query).fetchdf()
+        with _duck_lock:
+            df = conn.execute(sql_query).fetchdf()
     except Exception as exc:
         logger.error("DuckDB query failed: %s", exc)
         raise
+
+    if df is None:
+        df = pd.DataFrame()
 
     logger.info("Query OK | rows=%d cols=%d", len(df), len(df.columns))
     if not df.empty:

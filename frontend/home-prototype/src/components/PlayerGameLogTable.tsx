@@ -1,4 +1,4 @@
-import { useRef } from "react"
+import { useEffect, useRef } from "react"
 
 import {
 
@@ -48,6 +48,8 @@ interface PlayerGameLogTableProps {
 
   onReference?: (label: string) => void
 
+  onSeasonChange?: (season: string) => void
+
 }
 
 
@@ -67,6 +69,8 @@ export function PlayerGameLogTable({
   onOpenPlayerGame,
 
   onReference,
+
+  onSeasonChange,
 
 }: PlayerGameLogTableProps) {
 
@@ -88,6 +92,10 @@ export function PlayerGameLogTable({
     logsLoading,
     statsLoading,
   } = usePlayerGameLogTableState(playerId, initialSeason)
+
+  useEffect(() => {
+    onSeasonChange?.(season)
+  }, [season, onSeasonChange])
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
 
@@ -301,7 +309,7 @@ export function PlayerGameLogTable({
 
         ref={tableScrollRef}
 
-        className="max-h-[min(420px,50vh)] overflow-auto"
+        className="max-h-[min(300px,42vh)] overflow-auto"
 
       >
 

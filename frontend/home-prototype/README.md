@@ -40,10 +40,11 @@ npm run dev
 
 **Wired to staging API** (green **Vault** badge when live):
 
-- Player season stat bubbles + game log (general tab) + career tab
-- Team standings, season leaders (PTS/REB/AST), team game log (general tab)
+- Player season stat bubbles + game log (general + advanced tabs) + career tab
+- Team season panel: standings, record, best GS, per-game leaders (one season dropdown)
+- Team game log (general + advanced), season history, roster
 
-**Still mock:** live dashboard, box scores, shot charts (xy), AI copy, chat.
+**Still mock:** logo, championships, conference titles, last championship/playoffs (needs `ClinchedPlayoffBirth`), live dashboard, box scores, shot charts, per36/per100 team tabs, AI copy, chat.
 
 Demo players (`player-tatum`, etc.) map to NBA player IDs in `src/api/nbaIds.ts`.
 

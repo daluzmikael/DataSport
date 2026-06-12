@@ -1,9 +1,6 @@
-import { useState } from "react"
-import {
-  getTeamSeasonOptions,
-  getTeamSeasonRoster,
-} from "../data/teamSeasonRosterBuilder"
+import { useStagingTeamRoster, useTeamVaultSeason } from "../hooks/useStagingTeam"
 import { ReferencedLabel } from "./AskReferenceButton"
+import { StagingBadge } from "./StagingBadge"
 import type { TeamProfile } from "../types"
 
 interface TeamRosterSectionProps {
@@ -12,10 +9,9 @@ interface TeamRosterSectionProps {
 }
 
 export function TeamRosterSection({ profile, onReference }: TeamRosterSectionProps) {
-  const seasonOptions = getTeamSeasonOptions(profile)
-  const [season, setSeason] = useState(profile.seasonLabel)
-  const roster = getTeamSeasonRoster(profile, season)
-  const isCurrent = season === profile.seasonLabel
+  const { season, setSeason, seasons: seasonOptions, latestSeason } = useTeamVaultSeason(profile)
+  const { roster, fromApi } = useStagingTeamRoster(profile, season)
+  const isCurrent = season === latestSeason
 
   return (
     <section className="rounded-xl border border-ds-border bg-ds-panel">
@@ -35,6 +31,7 @@ export function TeamRosterSection({ profile, onReference }: TeamRosterSectionPro
               ))}
             </select>
             <span className="text-sm font-semibold">roster</span>
+            <StagingBadge show={fromApi} />
           </label>
         </div>
         <p className="text-[10px] text-ds-muted">
@@ -48,7 +45,9 @@ export function TeamRosterSection({ profile, onReference }: TeamRosterSectionPro
             className="flex items-center justify-between px-3 py-2 text-sm hover:bg-ds-raised/40"
           >
             <span>
-              <span className="mr-2 font-mono text-xs text-ds-muted">#{p.number}</span>
+              {p.number !== "—" ? (
+                <span className="mr-2 font-mono text-xs text-ds-muted">#{p.number}</span>
+              ) : null}
               <span className="font-medium">
                 <ReferencedLabel label={p.name} onReference={onReference} />
               </span>

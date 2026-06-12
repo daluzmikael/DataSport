@@ -175,6 +175,32 @@ export async function fetchPlayerSearch(
     .filter((h): h is StagingPlayerSearchHit => h != null)
 }
 
+export type StagingImpactProfile = {
+  label: string
+  tier: number
+  headline_metric: string
+  headline_score: number | null
+  net_rating?: number | null
+  usg_pct?: number | null
+  pie?: number | null
+  e_net_rating?: number | null
+  player_name?: string
+  team_abbr?: string
+}
+
+export async function fetchPlayerImpactProfile(
+  playerId: string,
+  season: string,
+  seasonType = "Regular Season",
+): Promise<StagingImpactProfile | null> {
+  const json = await stagingGetFull<StagingImpactProfile>(
+    `/api/staging/players/${playerId}/impact-profile`,
+    { season, season_type: seasonType },
+    { retries: 1 },
+  )
+  return json?.data ?? null
+}
+
 export async function fetchPlayerSeasonStats(
   playerId: string,
   season: string,
@@ -297,6 +323,54 @@ export async function fetchStagingSeasons() {
   return stagingGet<string[]>("/api/staging/seasons")
 }
 
+export async function fetchPlayerSeasonTrends(
+  playerId: string,
+  seasonType = "Regular Season",
+) {
+  return stagingGet<Record<string, unknown>[]>(
+    `/api/staging/players/${playerId}/season-trends`,
+    { season_type: seasonType },
+  )
+}
+
+export async function fetchLeagueScatter(
+  season: string,
+  xStat: string,
+  yStat: string,
+  options?: { minGp?: number; limit?: number },
+) {
+  return stagingGet<Record<string, unknown>[]>(
+    "/api/staging/league/scatter",
+    {
+      season,
+      x_stat: xStat,
+      y_stat: yStat,
+      min_gp: options?.minGp ?? 20,
+      limit: options?.limit ?? 500,
+    },
+  )
+}
+
+export async function fetchLeagueLeaders(
+  season: string,
+  stat = "PTS",
+  options?: { minGp?: number; limit?: number; highlightPlayerId?: string },
+) {
+  const params: Record<string, string | number> = {
+    season,
+    stat,
+    min_gp: options?.minGp ?? 20,
+    limit: options?.limit ?? 10,
+  }
+  if (options?.highlightPlayerId) {
+    params.highlight_player_id = options.highlightPlayerId
+  }
+  return stagingGet<Record<string, unknown>[]>(
+    "/api/staging/league/leaders",
+    params,
+  )
+}
+
 export async function fetchPlayerCareer(playerId: string) {
   const json = await stagingGetFull<Record<string, unknown>[]>(
     `/api/staging/players/${playerId}/career`,
@@ -310,11 +384,12 @@ export async function fetchPlayerShotZones(
   playerId: string,
   season: string,
   seasonType = "Regular Season",
+  perMode: "PerGame" | "Totals" = "PerGame",
 ) {
   return stagingGet<Record<string, unknown>>(`/api/staging/players/${playerId}/shot-zones`, {
     season,
     season_type: seasonType,
-    per_mode: "PerGame",
+    per_mode: perMode,
   })
 }
 
@@ -322,8 +397,66 @@ export async function fetchTeamSeasonStats(
   teamId: string,
   season: string,
   seasonType = "Regular Season",
+  measureType: "Base" | "Advanced" = "Base",
 ) {
   return stagingGet<Record<string, unknown>>(`/api/staging/teams/${teamId}/season-stats`, {
+    season,
+    season_type: seasonType,
+    per_mode: "PerGame",
+    measure_type: measureType,
+  })
+}
+
+export async function fetchTeamGameLogSeasons(
+  teamId: string,
+  seasonType = "Regular Season",
+): Promise<string[] | null> {
+  return fetchTeamSeasons(teamId, seasonType)
+}
+
+export async function fetchTeamSeasons(
+  teamId: string,
+  seasonType = "Regular Season",
+): Promise<string[] | null> {
+  const json = await stagingGetFull<string[]>(
+    `/api/staging/teams/${teamId}/seasons`,
+    { season_type: seasonType },
+    { retries: 2 },
+  )
+  if (isSeasonList(json?.data)) return json!.data
+  const legacy = await stagingGetFull<string[]>(
+    `/api/staging/teams/${teamId}/game-log-seasons`,
+    { season_type: seasonType },
+    { retries: 1 },
+  )
+  if (isSeasonList(legacy?.data)) return legacy!.data
+  return null
+}
+
+export async function fetchTeamSeasonHistory(teamId: string, seasonType = "Regular Season") {
+  return stagingGet<Record<string, unknown>[]>(`/api/staging/teams/${teamId}/season-history`, {
+    season_type: seasonType,
+    per_mode: "PerGame",
+  })
+}
+
+export async function fetchTeamRoster(
+  teamId: string,
+  season: string,
+  seasonType = "Regular Season",
+) {
+  return stagingGet<Record<string, unknown>[]>(`/api/staging/teams/${teamId}/roster`, {
+    season,
+    season_type: seasonType,
+  })
+}
+
+export async function fetchTeamShotZones(
+  teamId: string,
+  season: string,
+  seasonType = "Regular Season",
+) {
+  return stagingGet<Record<string, unknown>>(`/api/staging/teams/${teamId}/shot-zones`, {
     season,
     season_type: seasonType,
     per_mode: "PerGame",
@@ -334,11 +467,13 @@ export async function fetchTeamGameLogs(
   teamId: string,
   season: string,
   seasonType = "Regular Season",
+  options?: { includeAdvanced?: boolean },
 ) {
   return stagingGet<Record<string, unknown>[]>(`/api/staging/teams/${teamId}/game-logs`, {
     season,
     season_type: seasonType,
     limit: 82,
+    include_advanced: options?.includeAdvanced ? "true" : "false",
   })
 }
 
@@ -353,13 +488,42 @@ export async function fetchTeamStandings(
   })
 }
 
+export async function fetchTeamAllTimeRecord(teamId: string, seasonType = "Regular Season") {
+  return stagingGet<{
+    total_wins?: number
+    total_losses?: number
+    seasons_count?: number
+  }>(`/api/staging/teams/${teamId}/all-time-record`, { season_type: seasonType })
+}
+
+export async function fetchTeamBestPlayer(
+  teamId: string,
+  season: string,
+  seasonType = "Regular Season",
+  minGp = 10,
+) {
+  return stagingGet<{
+    PLAYER_ID?: number | string
+    PLAYER_NAME?: string
+    game_score?: number
+    GP?: number
+  }>(`/api/staging/teams/${teamId}/best-player`, {
+    season,
+    season_type: seasonType,
+    min_gp: minGp,
+  })
+}
+
 export async function fetchTeamLeaders(
   teamId: string,
   season: string,
-  stat: "PTS" | "REB" | "AST",
+  stat: string,
+  minGp = 10,
 ) {
-  return stagingGet<{ PLAYER_NAME?: string; value?: number }[]>(
-    `/api/staging/teams/${teamId}/leaders`,
-    { season, season_type: "Regular Season", stat },
-  )
+  return stagingGet<Record<string, unknown>[]>(`/api/staging/teams/${teamId}/leaders`, {
+    season,
+    season_type: "Regular Season",
+    stat,
+    min_gp: minGp,
+  })
 }

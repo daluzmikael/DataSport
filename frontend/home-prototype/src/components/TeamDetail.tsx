@@ -1,10 +1,11 @@
-import { useStagingTeamStandings } from "../hooks/useStagingTeam"
+import { useStagingTeamHistory } from "../hooks/useStagingTeam"
 import type { TeamProfile } from "../types"
 import { ReferencedLabel } from "./AskReferenceButton"
 import { TeamFranchiseHeader } from "./TeamFranchiseHeader"
 import { TeamRosterSection } from "./TeamRosterSection"
 import { TeamSeasonLeadersSection } from "./TeamSeasonLeadersSection"
 import { TeamSeasonGameLogTable } from "./TeamSeasonGameLogTable"
+import { StagingBadge } from "./StagingBadge"
 
 interface TeamDetailProps {
   profile: TeamProfile
@@ -14,8 +15,8 @@ interface TeamDetailProps {
 }
 
 export function TeamDetail({ profile, liveGameId, onOpenGame, onReference }: TeamDetailProps) {
-  const { currentSeason } = useStagingTeamStandings(profile, profile.seasonLabel)
-  const displayProfile: TeamProfile = { ...profile, currentSeason }
+  const { history, fromApi: historyFromApi } = useStagingTeamHistory(profile)
+  const displayProfile: TeamProfile = profile
 
   const histCols = [
     { id: "season", label: "Season" },
@@ -29,7 +30,7 @@ export function TeamDetail({ profile, liveGameId, onOpenGame, onReference }: Tea
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <TeamFranchiseHeader profile={displayProfile} onReference={onReference} />
+      <TeamFranchiseHeader profile={profile} onReference={onReference} />
 
       <TeamSeasonLeadersSection profile={displayProfile} onReference={onReference} />
 
@@ -42,7 +43,10 @@ export function TeamDetail({ profile, liveGameId, onOpenGame, onReference }: Tea
 
       <section className="rounded-xl border border-ds-border bg-ds-panel">
         <div className="border-b border-ds-border px-3 py-2">
-          <h3 className="text-sm font-semibold">Season history</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold">Season history</h3>
+            <StagingBadge show={historyFromApi} />
+          </div>
           <p className="text-[10px] text-ds-muted">Franchise averages · chronological</p>
         </div>
         <div className="max-h-[min(320px,40vh)] overflow-auto">
@@ -60,7 +64,7 @@ export function TeamDetail({ profile, liveGameId, onOpenGame, onReference }: Tea
               </tr>
             </thead>
             <tbody className="font-mono tabular-nums">
-              {profile.history.map((row) => (
+              {history.map((row) => (
                 <tr
                   key={row.season}
                   className={`border-b border-ds-border/40 hover:bg-ds-raised/40 ${
@@ -80,7 +84,7 @@ export function TeamDetail({ profile, liveGameId, onOpenGame, onReference }: Tea
           </table>
         </div>
         <p className="px-3 py-1.5 text-[10px] text-ds-muted">
-          {profile.history.length} seasons · scroll ↕
+          {history.length} seasons · scroll ↕
         </p>
       </section>
 

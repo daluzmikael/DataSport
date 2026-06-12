@@ -57,6 +57,8 @@ export const SEARCHABLE_TEAMS: FavoriteTeam[] = [
   { id: "team-mem", abbr: "MEM", name: "Grizzlies", city: "Memphis" },
   { id: "team-mia", abbr: "MIA", name: "Heat", city: "Miami" },
   { id: "team-mil", abbr: "MIL", name: "Bucks", city: "Milwaukee" },
+  { id: "team-min", abbr: "MIN", name: "Timberwolves", city: "Minnesota" },
+  { id: "team-nop", abbr: "NOP", name: "Pelicans", city: "New Orleans" },
   { id: "team-nyk", abbr: "NYK", name: "Knicks", city: "New York" },
   { id: "team-okc", abbr: "OKC", name: "Thunder", city: "Oklahoma City" },
   { id: "team-orl", abbr: "ORL", name: "Magic", city: "Orlando" },

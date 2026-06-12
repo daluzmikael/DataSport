@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 
+from Analyzer.player_composite import player_impact_label
 from Executer.data_backend import get_connection, use_duckdb_staging
 from Executer.duckdb_store import default_staging_dir, list_registered_tables, refresh_views
 from Executer.executor import execute_query, validate_and_normalize_sql
@@ -17,7 +18,15 @@ router = APIRouter(prefix="/api/staging", tags=["staging"])
 _SEASON_RE = re.compile(r"^\d{4}-\d{2}$")
 _NUM_ID_RE = re.compile(r"^\d+$")
 _SEASON_TYPES = {"Regular Season", "Playoffs"}
-_PER_MODES = {"PerGame", "Totals"}
+_PER_MODES = {
+    "PerGame",
+    "Totals",
+    "Per100Possessions",
+    "Per36",
+    "Per40",
+    "Per100Plays",
+}
+_MEASURE_TYPES = {"Base", "Advanced", "Usage", "Misc", "Scoring", "Defense"}
 
 
 def _require_staging() -> None:
@@ -50,6 +59,33 @@ def _per_mode(value: str) -> str:
     if value not in _PER_MODES:
         raise HTTPException(status_code=400, detail=f"Invalid per_mode: {value}")
     return value
+
+
+def _measure_type(value: str) -> str:
+    if value not in _MEASURE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid measure_type: {value}")
+    return value
+
+
+_measure_type_column_available: bool | None = None
+
+
+def _measure_type_sql(alias: str = "", measure_type: str = "Base") -> str:
+    """Filter by measure_type when staged; no-op until column exists in parquet."""
+    global _measure_type_column_available
+    if _measure_type_column_available is None:
+        try:
+            execute_query(get_connection(), "SELECT measure_type FROM player_season_stats LIMIT 0")
+            _measure_type_column_available = True
+        except Exception:
+            _measure_type_column_available = False
+    if not _measure_type_column_available:
+        return "1=1"
+    col = f"{alias}measure_type" if alias else "measure_type"
+    mt = _measure_type(measure_type)
+    if mt == "Base":
+        return f"({col} = 'Base' OR {col} IS NULL)"
+    return f"{col} = '{mt}'"
 
 
 def _sanitize_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -96,6 +132,15 @@ def _player_adv_join_on(gl_alias: str = "gl.", adv_alias: str = "adv.") -> str:
         f"= lpad(CAST({adv_alias}game_id AS VARCHAR), 10, '0') "
         f"AND FLOOR(TRY_CAST({adv_alias}personId AS DOUBLE)) "
         f"= FLOOR(TRY_CAST({gl_alias}PLAYER_ID AS DOUBLE))"
+    )
+
+
+def _team_adv_join_on(gl_alias: str = "gl.", adv_alias: str = "adv.") -> str:
+    return (
+        f"lpad(CAST({gl_alias}GAME_ID AS VARCHAR), 10, '0') "
+        f"= lpad(CAST({adv_alias}game_id AS VARCHAR), 10, '0') "
+        f"AND CAST({gl_alias}TEAM_ID AS VARCHAR) "
+        f"= CAST({adv_alias}teamId AS VARCHAR)"
     )
 
 
@@ -189,6 +234,7 @@ def search_players(
             WHERE season = '{season}'
               AND season_type = 'Regular Season'
               AND per_mode = 'PerGame'
+              AND {_measure_type_sql(measure_type="Base")}
               AND PLAYER_NAME ILIKE '%{term}%'
             ORDER BY PLAYER_NAME
             LIMIT {int(limit)}
@@ -202,6 +248,7 @@ def search_players(
                 FROM player_season_stats
                 WHERE season_type = 'Regular Season'
                   AND per_mode = 'PerGame'
+                  AND {_measure_type_sql(measure_type="Base")}
                   AND PLAYER_NAME ILIKE '%{term}%'
             ),
             agg AS (
@@ -238,11 +285,13 @@ def player_season_stats(
     season: str = "2024-25",
     season_type: str = "Regular Season",
     per_mode: str = "PerGame",
+    measure_type: str = "Base",
 ) -> dict[str, Any]:
     pid = _num_id(player_id, "player_id")
     season = _season(season)
     season_type = _season_type(season_type)
     per_mode = _per_mode(per_mode)
+    measure_type = _measure_type(measure_type)
     rows = _q(
         f"""
         SELECT *
@@ -251,10 +300,66 @@ def player_season_stats(
           AND season = '{season}'
           AND season_type = '{season_type}'
           AND per_mode = '{per_mode}'
+          AND {_measure_type_sql(measure_type=measure_type)}
         LIMIT 1
         """
     )
     return {"success": True, "data": rows[0] if rows else None}
+
+
+@router.get("/players/{player_id}/impact-profile")
+def player_impact_profile(
+    player_id: str,
+    season: str = "2024-25",
+    season_type: str = "Regular Season",
+) -> dict[str, Any]:
+    """NBA-native composite label from Advanced + estimated metrics (not DARKO/EPM)."""
+    pid = _num_id(player_id, "player_id")
+    season = _season(season)
+    season_type = _season_type(season_type)
+    try:
+        adv_rows = _q(
+            f"""
+            SELECT PIE, NET_RATING, USG_PCT, OFF_RATING, DEF_RATING, GP, PLAYER_NAME, TEAM_ABBREVIATION
+            FROM player_season_stats
+            WHERE {_player_id_sql(pid)}
+              AND season = '{season}'
+              AND season_type = '{season_type}'
+              AND per_mode = 'PerGame'
+              AND measure_type = 'Advanced'
+            LIMIT 1
+            """
+        )
+    except Exception:
+        adv_rows = []
+    try:
+        est_rows = _q(
+            f"""
+            SELECT E_NET_RATING, E_OFF_RATING, E_DEF_RATING, E_USG_PCT, GP, PLAYER_NAME
+            FROM player_estimated_metrics
+            WHERE {_player_id_sql(pid)}
+              AND season = '{season}'
+              AND season_type = '{season_type}'
+            LIMIT 1
+            """
+        )
+    except Exception:
+        est_rows = []
+    adv = adv_rows[0] if adv_rows else {}
+    est = est_rows[0] if est_rows else {}
+    profile = player_impact_label(
+        net_rating=est.get("E_NET_RATING") or adv.get("NET_RATING"),
+        usg_pct=est.get("E_USG_PCT") or adv.get("USG_PCT"),
+        pie=adv.get("PIE"),
+        gp=adv.get("GP") or est.get("GP"),
+    )
+    profile["player_id"] = pid
+    profile["season"] = season
+    profile["season_type"] = season_type
+    profile["player_name"] = adv.get("PLAYER_NAME") or est.get("PLAYER_NAME")
+    profile["team_abbr"] = adv.get("TEAM_ABBREVIATION")
+    profile["e_net_rating"] = est.get("E_NET_RATING")
+    return {"success": True, "data": profile}
 
 
 @router.get("/players/{player_id}/game-log-seasons")
@@ -596,6 +701,28 @@ def game_box_score(game_id: str) -> dict[str, Any]:
     }
 
 
+@router.get("/players/{player_id}/season-trends")
+def player_season_trends(
+    player_id: str,
+    season_type: str = "Regular Season",
+) -> dict[str, Any]:
+    """Per-season per-game stat lines for career trend charts (oldest → newest)."""
+    pid = _num_id(player_id, "player_id")
+    season_type = _season_type(season_type)
+    rows = _q(
+        f"""
+        SELECT season, PTS, AST, REB, STL, BLK, GP, TEAM_ABBREVIATION
+        FROM player_season_stats
+        WHERE {_player_id_sql(pid)}
+          AND season_type = '{season_type}'
+          AND per_mode = 'PerGame'
+          AND {_measure_type_sql(measure_type="Base")}
+        ORDER BY season ASC
+        """
+    )
+    return {"success": True, "data": rows, "meta": {"count": len(rows)}}
+
+
 @router.get("/players/{player_id}/career")
 def player_career(player_id: str) -> dict[str, Any]:
     pid = _num_id(player_id, "player_id")
@@ -663,10 +790,11 @@ def team_id_by_abbr(abbr: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Team abbr must be 3 letters")
     rows = _q(
         f"""
-        SELECT DISTINCT TEAM_ID, TEAM_ABBREVIATION, TEAM_NAME
+        SELECT TEAM_ID, TEAM_ABBREVIATION, TEAM_NAME
         FROM team_season_stats
         WHERE TEAM_ABBREVIATION = '{code}'
-          AND season = '2024-25'
+          AND {_measure_type_sql(measure_type="Base")}
+        ORDER BY season DESC
         LIMIT 1
         """
     )
@@ -679,6 +807,147 @@ def team_season_stats(
     season: str = "2024-25",
     season_type: str = "Regular Season",
     per_mode: str = "PerGame",
+    measure_type: str = "Base",
+) -> dict[str, Any]:
+    tid = _num_id(team_id, "team_id")
+    season = _season(season)
+    season_type = _season_type(season_type)
+    per_mode = _per_mode(per_mode)
+    measure_type = _measure_type(measure_type)
+    rows = _q(
+        f"""
+        SELECT *
+        FROM team_season_stats
+        WHERE TEAM_ID = {tid}
+          AND season = '{season}'
+          AND season_type = '{season_type}'
+          AND per_mode = '{per_mode}'
+          AND {_measure_type_sql(measure_type=measure_type)}
+        LIMIT 1
+        """
+    )
+    return {"success": True, "data": rows[0] if rows else None}
+
+
+def _team_season_list(tid: str, season_type: str) -> list[str]:
+    rows = _q(
+        f"""
+        SELECT DISTINCT season
+        FROM (
+            SELECT season
+            FROM team_game_logs
+            WHERE CAST(TEAM_ID AS VARCHAR) = '{tid}'
+              AND season_type = '{season_type}'
+            UNION
+            SELECT season
+            FROM team_standings
+            WHERE TeamID = {tid}
+              AND season_type = '{season_type}'
+            UNION
+            SELECT season
+            FROM team_season_stats
+            WHERE TEAM_ID = {tid}
+              AND season_type = '{season_type}'
+        ) AS seasons_union
+        WHERE season IS NOT NULL
+          AND TRIM(season) != ''
+        ORDER BY season DESC
+        """
+    )
+    return [str(r["season"]) for r in rows if r.get("season")]
+
+
+@router.get("/teams/{team_id}/game-log-seasons")
+def team_game_log_seasons(
+    team_id: str,
+    season_type: str = "Regular Season",
+) -> dict[str, Any]:
+    """Distinct seasons for this team (newest first)."""
+    tid = _num_id(team_id, "team_id")
+    season_type = _season_type(season_type)
+    seasons = _team_season_list(tid, season_type)
+    return {
+        "success": True,
+        "data": seasons,
+        "meta": {"season_type": season_type, "count": len(seasons)},
+    }
+
+
+@router.get("/teams/{team_id}/seasons")
+def team_seasons(
+    team_id: str,
+    season_type: str = "Regular Season",
+) -> dict[str, Any]:
+    """All distinct seasons for this team (logs + standings + season stats)."""
+    tid = _num_id(team_id, "team_id")
+    season_type = _season_type(season_type)
+    seasons = _team_season_list(tid, season_type)
+    return {
+        "success": True,
+        "data": seasons,
+        "meta": {"season_type": season_type, "count": len(seasons)},
+    }
+
+
+@router.get("/teams/{team_id}/season-history")
+def team_season_history(
+    team_id: str,
+    season_type: str = "Regular Season",
+    per_mode: str = "PerGame",
+) -> dict[str, Any]:
+    """Franchise season-by-season averages (1996–present when staged)."""
+    tid = _num_id(team_id, "team_id")
+    season_type = _season_type(season_type)
+    per_mode = _per_mode(per_mode)
+    rows = _q(
+        f"""
+        SELECT season, W, L, PTS, REB, AST, FG_PCT, FG3_PCT
+        FROM team_season_stats
+        WHERE TEAM_ID = {tid}
+          AND season_type = '{season_type}'
+          AND per_mode = '{per_mode}'
+          AND {_measure_type_sql(measure_type="Base")}
+        ORDER BY season DESC
+        """
+    )
+    return {"success": True, "data": rows, "meta": {"count": len(rows)}}
+
+
+@router.get("/teams/{team_id}/roster")
+def team_roster(
+    team_id: str,
+    season: str = "2024-25",
+    season_type: str = "Regular Season",
+) -> dict[str, Any]:
+    """Players on the team for a season (from player_season_stats)."""
+    tid = _num_id(team_id, "team_id")
+    season = _season(season)
+    season_type = _season_type(season_type)
+    rows = _q(
+        f"""
+        SELECT PLAYER_ID, PLAYER_NAME, GP, MIN, PTS, REB, AST
+        FROM player_season_stats
+        WHERE TEAM_ID = {tid}
+          AND season = '{season}'
+          AND season_type = '{season_type}'
+          AND per_mode = 'PerGame'
+          AND {_measure_type_sql(measure_type="Base")}
+        ORDER BY MIN DESC NULLS LAST, PTS DESC NULLS LAST
+        """
+    )
+    return {
+        "success": True,
+        "data": rows,
+        "meta": {"season": season, "season_type": season_type, "count": len(rows)},
+    }
+
+
+@router.get("/teams/{team_id}/shot-zones")
+def team_shot_zones(
+    team_id: str,
+    season: str = "2024-25",
+    season_type: str = "Regular Season",
+    per_mode: str = "PerGame",
 ) -> dict[str, Any]:
     tid = _num_id(team_id, "team_id")
     season = _season(season)
@@ -687,8 +956,8 @@ def team_season_stats(
     rows = _q(
         f"""
         SELECT *
-        FROM team_season_stats
-        WHERE TEAM_ID = {tid}
+        FROM team_shot_zones
+        WHERE CAST(team_id AS VARCHAR) = '{tid}'
           AND season = '{season}'
           AND season_type = '{season_type}'
           AND per_mode = '{per_mode}'
@@ -704,22 +973,130 @@ def team_game_logs(
     season: str = "2024-25",
     season_type: str = "Regular Season",
     limit: int = Query(82, ge=1, le=500),
+    include_advanced: bool = Query(False),
 ) -> dict[str, Any]:
     tid = _num_id(team_id, "team_id")
     season = _season(season)
     season_type = _season_type(season_type)
-    rows = _q(
-        f"""
-        SELECT *
-        FROM team_game_logs
-        WHERE CAST(TEAM_ID AS VARCHAR) = '{tid}'
-          AND season = '{season}'
-          AND season_type = '{season_type}'
-        ORDER BY GAME_DATE DESC
+    where = (
+        f"CAST(gl.TEAM_ID AS VARCHAR) = '{tid}' "
+        f"AND gl.season = '{season}' "
+        f"AND gl.season_type = '{season_type}'"
+    )
+    basic_sql = f"""
+        SELECT gl.*
+        FROM team_game_logs gl
+        WHERE {where}
+        ORDER BY gl.GAME_DATE DESC
         LIMIT {int(limit)}
         """
+    join_sql = f"""
+        SELECT
+            gl.*,
+            adv.offensiveRating,
+            adv.defensiveRating,
+            adv.netRating,
+            adv.trueShootingPercentage,
+            adv.effectiveFieldGoalPercentage,
+            adv.usagePercentage,
+            adv.PIE,
+            adv.pacePer40,
+            adv.estimatedPace,
+            adv.assistPercentage,
+            adv.assistToTurnover,
+            adv.assistRatio,
+            adv.offensiveReboundPercentage,
+            adv.defensiveReboundPercentage,
+            adv.reboundPercentage,
+            adv.turnoverRatio
+        FROM team_game_logs gl
+        LEFT JOIN team_game_advanced adv
+          ON {_team_adv_join_on()}
+        WHERE {where}
+        ORDER BY gl.GAME_DATE DESC
+        LIMIT {int(limit)}
+        """
+    if include_advanced:
+        try:
+            rows = _q(join_sql)
+        except Exception:
+            rows = _q(basic_sql)
+    else:
+        rows = _q(basic_sql)
+    return {
+        "success": True,
+        "data": rows,
+        "meta": {
+            "season": season,
+            "season_type": season_type,
+            "count": len(rows),
+            "include_advanced": include_advanced,
+        },
+    }
+
+
+@router.get("/teams/{team_id}/all-time-record")
+def team_all_time_record(
+    team_id: str,
+    season_type: str = "Regular Season",
+) -> dict[str, Any]:
+    """Sum wins/losses across all staged seasons in team_standings."""
+    tid = _num_id(team_id, "team_id")
+    season_type = _season_type(season_type)
+    rows = _q(
+        f"""
+        SELECT
+            COALESCE(SUM(WINS), 0) AS total_wins,
+            COALESCE(SUM(LOSSES), 0) AS total_losses,
+            COUNT(*) AS seasons_count
+        FROM team_standings
+        WHERE TeamID = {tid}
+          AND season_type = '{season_type}'
+        """
     )
-    return {"success": True, "data": rows}
+    row = rows[0] if rows else {"total_wins": 0, "total_losses": 0, "seasons_count": 0}
+    return {"success": True, "data": row}
+
+
+@router.get("/teams/{team_id}/best-player")
+def team_best_player(
+    team_id: str,
+    season: str = "2024-25",
+    season_type: str = "Regular Season",
+    min_gp: int = Query(10, ge=1, le=82),
+) -> dict[str, Any]:
+    """Top player on the team by Hollinger game score (PerGame season line)."""
+    tid = _num_id(team_id, "team_id")
+    season = _season(season)
+    season_type = _season_type(season_type)
+    gs_expr = (
+        "PTS + 0.4 * FGM - 0.7 * FGA - 0.4 * (FTA - FTM) "
+        "+ 0.7 * OREB + 0.3 * DREB + STL + 0.7 * AST + 0.7 * BLK "
+        "- 0.4 * PF - TOV"
+    )
+    rows = _q(
+        f"""
+        SELECT
+            PLAYER_ID,
+            PLAYER_NAME,
+            GP,
+            ({gs_expr}) AS game_score
+        FROM player_season_stats
+        WHERE TEAM_ID = {tid}
+          AND season = '{season}'
+          AND season_type = '{season_type}'
+          AND per_mode = 'PerGame'
+          AND {_measure_type_sql(measure_type="Base")}
+          AND GP >= {int(min_gp)}
+        ORDER BY game_score DESC NULLS LAST
+        LIMIT 1
+        """
+    )
+    return {
+        "success": True,
+        "data": rows[0] if rows else None,
+        "meta": {"season": season, "season_type": season_type, "min_gp": min_gp},
+    }
 
 
 @router.get("/teams/{team_id}/standings")
@@ -733,7 +1110,14 @@ def team_standings(
     season_type = _season_type(season_type)
     rows = _q(
         f"""
-        SELECT *
+        SELECT
+            Record,
+            PlayoffRank,
+            Conference,
+            WINS,
+            LOSSES,
+            season,
+            season_type
         FROM team_standings
         WHERE TeamID = {tid}
           AND season = '{season}'
@@ -744,27 +1128,192 @@ def team_standings(
     return {"success": True, "data": rows[0] if rows else None}
 
 
+_LEADER_STAT_EXPR: dict[str, str] = {
+    "PTS": "PTS",
+    "REB": "REB",
+    "AST": "AST",
+    "STL": "STL",
+    "BLK": "BLK",
+    "FG3M": "FG3M",
+    "TOV": "TOV",
+    "MIN": "MIN",
+    "FG_PCT": "FG_PCT",
+    "FG3_PCT": "FG3_PCT",
+    "TS_PCT": (
+        "CASE WHEN (FGA + 0.44 * FTA) > 0 "
+        "THEN PTS / (2.0 * (FGA + 0.44 * FTA)) ELSE NULL END"
+    ),
+}
+
+_LEADER_STAT_PATTERN = "^(" + "|".join(_LEADER_STAT_EXPR.keys()) + ")$"
+
+
 @router.get("/teams/{team_id}/leaders")
 def team_season_leaders(
     team_id: str,
     season: str = "2024-25",
     season_type: str = "Regular Season",
-    stat: str = Query("PTS", pattern="^(PTS|REB|AST)$"),
+    stat: str = Query("PTS", pattern=_LEADER_STAT_PATTERN),
+    min_gp: int = Query(10, ge=1, le=82),
 ) -> dict[str, Any]:
+    """Top players on a team for a per-game stat (player_season_stats)."""
     tid = _num_id(team_id, "team_id")
     season = _season(season)
     season_type = _season_type(season_type)
-    col = stat
+    stat_key = stat.upper()
+    expr = _LEADER_STAT_EXPR[stat_key]
+    value_sql = expr if expr.isidentifier() else f"({expr})"
     rows = _q(
         f"""
-        SELECT PLAYER_ID, PLAYER_NAME, TEAM_ABBREVIATION, {col} AS value
+        SELECT
+            PLAYER_ID,
+            PLAYER_NAME,
+            TEAM_ABBREVIATION,
+            {value_sql} AS value
         FROM player_season_stats
         WHERE TEAM_ID = {tid}
           AND season = '{season}'
           AND season_type = '{season_type}'
           AND per_mode = 'PerGame'
-        ORDER BY {col} DESC NULLS LAST
+          AND {_measure_type_sql(measure_type="Base")}
+          AND GP >= {int(min_gp)}
+        ORDER BY value DESC NULLS LAST
         LIMIT 5
         """
     )
-    return {"success": True, "data": rows, "meta": {"stat": stat}}
+    return {
+        "success": True,
+        "data": rows,
+        "meta": {"stat": stat_key, "min_gp": min_gp},
+    }
+
+
+@router.get("/league/leaders")
+def league_season_leaders(
+    season: str = "2022-23",
+    season_type: str = "Regular Season",
+    stat: str = Query("PTS", pattern=_LEADER_STAT_PATTERN),
+    min_gp: int = Query(20, ge=1, le=82),
+    limit: int = Query(10, ge=1, le=25),
+    highlight_player_id: str | None = None,
+) -> dict[str, Any]:
+    """League-wide per-game leaders for a season (player_season_stats)."""
+    season = _season(season)
+    season_type = _season_type(season_type)
+    stat_key = stat.upper()
+    expr = _LEADER_STAT_EXPR[stat_key]
+    value_sql = expr if expr.isidentifier() else f"({expr})"
+    base_where = f"""
+        season = '{season}'
+        AND season_type = '{season_type}'
+        AND per_mode = 'PerGame'
+        AND {_measure_type_sql(measure_type="Base")}
+        AND GP >= {int(min_gp)}
+    """
+    rows = _q(
+        f"""
+        SELECT
+            PLAYER_ID,
+            PLAYER_NAME,
+            TEAM_ABBREVIATION,
+            {value_sql} AS value
+        FROM player_season_stats
+        WHERE {base_where}
+        ORDER BY value DESC NULLS LAST
+        LIMIT {int(limit)}
+        """
+    )
+    if highlight_player_id:
+        hid = int(_num_id(highlight_player_id, "highlight_player_id"))
+        seen = {
+            int(float(r["PLAYER_ID"]))
+            for r in rows
+            if r.get("PLAYER_ID") is not None
+        }
+        if hid not in seen:
+            extra = _q(
+                f"""
+                SELECT
+                    PLAYER_ID,
+                    PLAYER_NAME,
+                    TEAM_ABBREVIATION,
+                    {value_sql} AS value
+                FROM player_season_stats
+                WHERE {_player_id_sql(hid)}
+                  AND {base_where}
+                LIMIT 1
+                """
+            )
+            if extra:
+                rows = sorted(
+                    [*rows, *extra],
+                    key=lambda r: float(r.get("value") or 0),
+                    reverse=True,
+                )[: int(limit)]
+    for i, row in enumerate(rows, start=1):
+        row["rank"] = i
+    return {
+        "success": True,
+        "data": rows,
+        "meta": {
+            "season": season,
+            "season_type": season_type,
+            "stat": stat_key,
+            "min_gp": min_gp,
+            "limit": limit,
+        },
+    }
+
+
+def _leader_value_sql(stat_key: str) -> str:
+    expr = _LEADER_STAT_EXPR[stat_key.upper()]
+    return expr if expr.isidentifier() else f"({expr})"
+
+
+@router.get("/league/scatter")
+def league_scatter(
+    season: str = "2023-24",
+    season_type: str = "Regular Season",
+    x_stat: str = Query("MIN", pattern=_LEADER_STAT_PATTERN),
+    y_stat: str = Query("PTS", pattern=_LEADER_STAT_PATTERN),
+    min_gp: int = Query(20, ge=1, le=82),
+    limit: int = Query(500, ge=1, le=750),
+) -> dict[str, Any]:
+    """League scatter rows for dashboard-style Scatter charts (player_name, x_value, y_value)."""
+    season = _season(season)
+    season_type = _season_type(season_type)
+    x_key = x_stat.upper()
+    y_key = y_stat.upper()
+    x_sql = _leader_value_sql(x_key)
+    y_sql = _leader_value_sql(y_key)
+    rows = _q(
+        f"""
+        SELECT
+            PLAYER_NAME AS player_name,
+            {x_sql} AS x_value,
+            {y_sql} AS y_value,
+            PLAYER_ID
+        FROM player_season_stats
+        WHERE season = '{season}'
+          AND season_type = '{season_type}'
+          AND per_mode = 'PerGame'
+          AND {_measure_type_sql(measure_type="Base")}
+          AND GP >= {int(min_gp)}
+          AND {x_sql} IS NOT NULL
+          AND {y_sql} IS NOT NULL
+        ORDER BY {y_sql} DESC NULLS LAST
+        LIMIT {int(limit)}
+        """
+    )
+    return {
+        "success": True,
+        "data": rows,
+        "meta": {
+            "season": season,
+            "season_type": season_type,
+            "x_stat": x_key,
+            "y_stat": y_key,
+            "min_gp": min_gp,
+            "limit": limit,
+        },
+    }

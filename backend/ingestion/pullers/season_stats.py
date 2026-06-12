@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pandas as pd
 from nba_api.stats.endpoints import (
@@ -17,7 +18,11 @@ from nba_api.stats.endpoints import (
 from ingestion.config import (
     API_TIMEOUT_SEC,
     CLUTCH_DEFAULTS,
-    PER_MODES_DASH,
+    MEASURE_TYPES_PLAYER_CLUTCH,
+    MEASURE_TYPES_PLAYER_DASH,
+    MEASURE_TYPES_TEAM_CLUTCH,
+    MEASURE_TYPES_TEAM_DASH,
+    PER_MODES_DASH_EXTENDED,
     PULL_STATE_FILE,
     RAW_TABLE_DIRS,
     SEASON_TYPES,
@@ -30,11 +35,12 @@ from ingestion.utils.nba_client import (
     save_json,
     save_parquet,
 )
-from ingestion.utils.seasons import iter_seasons, season_type_slug
+from ingestion.utils.seasons import iter_seasons
+from ingestion.utils.slice_names import clutch_out_paths, dash_out_paths, legacy_slice_filename
 
 logger = logging.getLogger(__name__)
 
-_DASH_DEFAULTS = {
+_DASH_DEFAULTS_BASE = {
     "last_n_games": 0,
     "month": 0,
     "opponent_team_id": 0,
@@ -42,65 +48,82 @@ _DASH_DEFAULTS = {
     "period": 0,
     "plus_minus": "N",
     "rank": "N",
-    "measure_type_detailed_defense": "Base",
 }
+
+
+def _dash_defaults(measure_type: str) -> dict:
+    return {**_DASH_DEFAULTS_BASE, "measure_type_detailed_defense": measure_type}
+
+
+def _slice_exists(out_path: Path, legacy_path: Path | None) -> bool:
+    if out_path.exists():
+        return True
+    return legacy_path is not None and legacy_path.exists()
 
 
 def _pull_player_dash(seasons: list[str]) -> None:
     out_dir = RAW_TABLE_DIRS["player_season_stats"]
     for season in seasons:
         for season_type in SEASON_TYPES:
-            for per_mode in PER_MODES_DASH:
-                key = f"player_dash|{season}|{season_type}|{per_mode}"
-                out_path = out_dir / season / f"dash_{season_type_slug(season_type)}_{per_mode.lower()}.parquet"
-                if is_done(PULL_STATE_FILE, key) and out_path.exists():
-                    continue
-                try:
-                    ep = call_with_retry(
-                        lambda s=season, st=season_type, pm=per_mode: leaguedashplayerstats.LeagueDashPlayerStats(
-                            season=s,
-                            season_type_all_star=st,
-                            per_mode_detailed=pm,
-                            **_DASH_DEFAULTS,
-                        ),
-                        key,
+            for measure_type in MEASURE_TYPES_PLAYER_DASH:
+                for per_mode in PER_MODES_DASH_EXTENDED:
+                    key = f"player_dash|{season}|{season_type}|{measure_type}|{per_mode}"
+                    out_path, legacy_path = dash_out_paths(
+                        out_dir, season, season_type, measure_type, per_mode
                     )
-                    save_parquet(ep.get_data_frames()[0], out_path)
-                    mark_done(PULL_STATE_FILE, key)
-                    logger.info("saved %s", out_path)
-                except Exception as exc:  # noqa: BLE001
-                    mark_failed(PULL_STATE_FILE, key, str(exc))
-                    logger.exception("failed %s", key)
+                    if is_done(PULL_STATE_FILE, key) and _slice_exists(out_path, legacy_path):
+                        continue
+                    try:
+                        ep = call_with_retry(
+                            lambda s=season, st=season_type, mt=measure_type, pm=per_mode: leaguedashplayerstats.LeagueDashPlayerStats(
+                                season=s,
+                                season_type_all_star=st,
+                                per_mode_detailed=pm,
+                                **_dash_defaults(mt),
+                            ),
+                            key,
+                        )
+                        out_path.parent.mkdir(parents=True, exist_ok=True)
+                        save_parquet(ep.get_data_frames()[0], out_path)
+                        mark_done(PULL_STATE_FILE, key)
+                        logger.info("saved %s", out_path)
+                    except Exception as exc:  # noqa: BLE001
+                        mark_failed(PULL_STATE_FILE, key, str(exc))
+                        logger.exception("failed %s", key)
 
 
 def _pull_player_clutch(seasons: list[str]) -> None:
     out_dir = RAW_TABLE_DIRS["player_season_stats"]
     for season in seasons:
         for season_type in SEASON_TYPES:
-            for per_mode in PER_MODES_DASH:
-                key = f"player_clutch|{season}|{season_type}|{per_mode}"
-                out_path = out_dir / season / f"clutch_{season_type_slug(season_type)}_{per_mode.lower()}.parquet"
-                if is_done(PULL_STATE_FILE, key) and out_path.exists():
-                    continue
-                try:
-                    ep = call_with_retry(
-                        lambda s=season, st=season_type, pm=per_mode: leaguedashplayerclutch.LeagueDashPlayerClutch(
-                            season=s,
-                            season_type_all_star=st,
-                            per_mode_detailed=pm,
-                            clutch_time=CLUTCH_DEFAULTS["clutch_time"],
-                            ahead_behind=CLUTCH_DEFAULTS["ahead_behind"],
-                            point_diff=CLUTCH_DEFAULTS["point_diff"],
-                            **_DASH_DEFAULTS,
-                        ),
-                        key,
+            for measure_type in MEASURE_TYPES_PLAYER_CLUTCH:
+                for per_mode in PER_MODES_DASH_EXTENDED:
+                    key = f"player_clutch|{season}|{season_type}|{measure_type}|{per_mode}"
+                    out_path, legacy_path = clutch_out_paths(
+                        out_dir, season, season_type, measure_type, per_mode
                     )
-                    save_parquet(ep.get_data_frames()[0], out_path)
-                    mark_done(PULL_STATE_FILE, key)
-                    logger.info("saved %s", out_path)
-                except Exception as exc:  # noqa: BLE001
-                    mark_failed(PULL_STATE_FILE, key, str(exc))
-                    logger.exception("failed %s", key)
+                    if is_done(PULL_STATE_FILE, key) and _slice_exists(out_path, legacy_path):
+                        continue
+                    try:
+                        ep = call_with_retry(
+                            lambda s=season, st=season_type, mt=measure_type, pm=per_mode: leaguedashplayerclutch.LeagueDashPlayerClutch(
+                                season=s,
+                                season_type_all_star=st,
+                                per_mode_detailed=pm,
+                                clutch_time=CLUTCH_DEFAULTS["clutch_time"],
+                                ahead_behind=CLUTCH_DEFAULTS["ahead_behind"],
+                                point_diff=CLUTCH_DEFAULTS["point_diff"],
+                                **_dash_defaults(mt),
+                            ),
+                            key,
+                        )
+                        out_path.parent.mkdir(parents=True, exist_ok=True)
+                        save_parquet(ep.get_data_frames()[0], out_path)
+                        mark_done(PULL_STATE_FILE, key)
+                        logger.info("saved %s", out_path)
+                    except Exception as exc:  # noqa: BLE001
+                        mark_failed(PULL_STATE_FILE, key, str(exc))
+                        logger.exception("failed %s", key)
 
 
 def _pull_player_hustle(seasons: list[str]) -> None:
@@ -109,7 +132,7 @@ def _pull_player_hustle(seasons: list[str]) -> None:
         for season_type in SEASON_TYPES:
             for per_mode in ("PerGame", "Totals"):
                 key = f"player_hustle|{season}|{season_type}|{per_mode}"
-                out_path = out_dir / season / f"hustle_{season_type_slug(season_type)}_{per_mode.lower()}.parquet"
+                out_path = out_dir / season / legacy_slice_filename("hustle", season_type, per_mode)
                 if is_done(PULL_STATE_FILE, key) and out_path.exists():
                     continue
                 try:
@@ -121,6 +144,7 @@ def _pull_player_hustle(seasons: list[str]) -> None:
                         ),
                         key,
                     )
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
                     save_parquet(ep.get_data_frames()[0], out_path)
                     mark_done(PULL_STATE_FILE, key)
                     logger.info("saved %s", out_path)
@@ -133,53 +157,62 @@ def _pull_team_dash_clutch_hustle(seasons: list[str]) -> None:
     out_dir = RAW_TABLE_DIRS["team_season_stats"]
     for season in seasons:
         for season_type in SEASON_TYPES:
-            for per_mode in PER_MODES_DASH:
-                key = f"team_dash|{season}|{season_type}|{per_mode}"
-                out_path = out_dir / season / f"dash_{season_type_slug(season_type)}_{per_mode.lower()}.parquet"
-                if not (is_done(PULL_STATE_FILE, key) and out_path.exists()):
-                    try:
-                        ep = call_with_retry(
-                            lambda s=season, st=season_type, pm=per_mode: leaguedashteamstats.LeagueDashTeamStats(
-                                season=s,
-                                season_type_all_star=st,
-                                per_mode_detailed=pm,
-                                **_DASH_DEFAULTS,
-                            ),
-                            key,
-                        )
-                        save_parquet(ep.get_data_frames()[0], out_path)
-                        mark_done(PULL_STATE_FILE, key)
-                        logger.info("saved %s", out_path)
-                    except Exception as exc:  # noqa: BLE001
-                        mark_failed(PULL_STATE_FILE, key, str(exc))
-                        logger.exception("failed %s", key)
+            for measure_type in MEASURE_TYPES_TEAM_DASH:
+                for per_mode in PER_MODES_DASH_EXTENDED:
+                    key = f"team_dash|{season}|{season_type}|{measure_type}|{per_mode}"
+                    out_path, legacy_path = dash_out_paths(
+                        out_dir, season, season_type, measure_type, per_mode
+                    )
+                    if not (is_done(PULL_STATE_FILE, key) and _slice_exists(out_path, legacy_path)):
+                        try:
+                            ep = call_with_retry(
+                                lambda s=season, st=season_type, mt=measure_type, pm=per_mode: leaguedashteamstats.LeagueDashTeamStats(
+                                    season=s,
+                                    season_type_all_star=st,
+                                    per_mode_detailed=pm,
+                                    **_dash_defaults(mt),
+                                ),
+                                key,
+                            )
+                            out_path.parent.mkdir(parents=True, exist_ok=True)
+                            save_parquet(ep.get_data_frames()[0], out_path)
+                            mark_done(PULL_STATE_FILE, key)
+                            logger.info("saved %s", out_path)
+                        except Exception as exc:  # noqa: BLE001
+                            mark_failed(PULL_STATE_FILE, key, str(exc))
+                            logger.exception("failed %s", key)
 
-                key = f"team_clutch|{season}|{season_type}|{per_mode}"
-                out_path = out_dir / season / f"clutch_{season_type_slug(season_type)}_{per_mode.lower()}.parquet"
-                if not (is_done(PULL_STATE_FILE, key) and out_path.exists()):
-                    try:
-                        ep = call_with_retry(
-                            lambda s=season, st=season_type, pm=per_mode: leaguedashteamclutch.LeagueDashTeamClutch(
-                                season=s,
-                                season_type_all_star=st,
-                                per_mode_detailed=pm,
-                                clutch_time=CLUTCH_DEFAULTS["clutch_time"],
-                                ahead_behind=CLUTCH_DEFAULTS["ahead_behind"],
-                                point_diff=CLUTCH_DEFAULTS["point_diff"],
-                                **_DASH_DEFAULTS,
-                            ),
-                            key,
-                        )
-                        save_parquet(ep.get_data_frames()[0], out_path)
-                        mark_done(PULL_STATE_FILE, key)
-                        logger.info("saved %s", out_path)
-                    except Exception as exc:  # noqa: BLE001
-                        mark_failed(PULL_STATE_FILE, key, str(exc))
-                        logger.exception("failed %s", key)
+            for measure_type in MEASURE_TYPES_TEAM_CLUTCH:
+                for per_mode in PER_MODES_DASH_EXTENDED:
+                    key = f"team_clutch|{season}|{season_type}|{measure_type}|{per_mode}"
+                    out_path, legacy_path = clutch_out_paths(
+                        out_dir, season, season_type, measure_type, per_mode
+                    )
+                    if not (is_done(PULL_STATE_FILE, key) and _slice_exists(out_path, legacy_path)):
+                        try:
+                            ep = call_with_retry(
+                                lambda s=season, st=season_type, mt=measure_type, pm=per_mode: leaguedashteamclutch.LeagueDashTeamClutch(
+                                    season=s,
+                                    season_type_all_star=st,
+                                    per_mode_detailed=pm,
+                                    clutch_time=CLUTCH_DEFAULTS["clutch_time"],
+                                    ahead_behind=CLUTCH_DEFAULTS["ahead_behind"],
+                                    point_diff=CLUTCH_DEFAULTS["point_diff"],
+                                    **_dash_defaults(mt),
+                                ),
+                                key,
+                            )
+                            out_path.parent.mkdir(parents=True, exist_ok=True)
+                            save_parquet(ep.get_data_frames()[0], out_path)
+                            mark_done(PULL_STATE_FILE, key)
+                            logger.info("saved %s", out_path)
+                        except Exception as exc:  # noqa: BLE001
+                            mark_failed(PULL_STATE_FILE, key, str(exc))
+                            logger.exception("failed %s", key)
 
             for per_mode in ("PerGame", "Totals"):
                 key = f"team_hustle|{season}|{season_type}|{per_mode}"
-                out_path = out_dir / season / f"hustle_{season_type_slug(season_type)}_{per_mode.lower()}.parquet"
+                out_path = out_dir / season / legacy_slice_filename("hustle", season_type, per_mode)
                 if is_done(PULL_STATE_FILE, key) and out_path.exists():
                     continue
                 try:
@@ -191,6 +224,7 @@ def _pull_team_dash_clutch_hustle(seasons: list[str]) -> None:
                         ),
                         key,
                     )
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
                     save_parquet(ep.get_data_frames()[0], out_path)
                     mark_done(PULL_STATE_FILE, key)
                     logger.info("saved %s", out_path)
@@ -211,11 +245,20 @@ def pull_team_season_stats(seasons: list[str] | None = None) -> None:
     _pull_team_dash_clutch_hustle(seasons)
 
 
-def _collect_player_ids(seasons: list[str]) -> list[str]:
+def _dash_player_id_paths(seasons: list[str]) -> list[Path]:
     out_dir = RAW_TABLE_DIRS["player_season_stats"]
-    ids: set[str] = set()
+    paths: list[Path] = []
     for season in seasons:
-        path = out_dir / season / "dash_regular_season_pergame.parquet"
+        season_dir = out_dir / season
+        if not season_dir.is_dir():
+            continue
+        paths.extend(sorted(season_dir.glob("dash_*.parquet")))
+    return paths
+
+
+def _collect_player_ids(seasons: list[str]) -> list[str]:
+    ids: set[str] = set()
+    for path in _dash_player_id_paths(seasons):
         df = load_parquet_if_exists(path)
         if df is None or df.empty:
             continue

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import {
   fetchPlayerCareer,
   fetchPlayerGameLogSeasons,
+  fetchPlayerImpactProfile,
   fetchPlayerSeasonStats,
 } from "../api/stagingClient"
 import { playerProfileFromSeasonStats, stubPlayerForStaging } from "../api/mappers"
@@ -35,8 +36,21 @@ async function resolveVaultPlayerProfile(
   }
 
   for (const s of seasonCandidates) {
-    const stats = await fetchPlayerSeasonStats(nbaId, s)
-    if (stats) return playerProfileFromSeasonStats(nbaId, stats)
+    const [stats, impact] = await Promise.all([
+      fetchPlayerSeasonStats(nbaId, s),
+      fetchPlayerImpactProfile(nbaId, s),
+    ])
+    if (stats) {
+      const profile = playerProfileFromSeasonStats(nbaId, stats)
+      if (impact?.label) {
+        profile.impactLabel = impact.label
+        profile.impactHeadlineMetric = impact.headline_metric
+        if (impact.headline_score != null) {
+          profile.impactHeadlineScore = impact.headline_score
+        }
+      }
+      return profile
+    }
   }
 
   const career = await fetchPlayerCareer(nbaId)

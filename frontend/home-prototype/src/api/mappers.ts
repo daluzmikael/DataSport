@@ -1,6 +1,6 @@
 import type { GameLogRow, GameLogTab } from "../data/playerGameLogMock"
 import type { SeasonBubbleSet } from "../data/playerSeasonAverages"
-import type { PlayerLive, TeamSeasonGameRow } from "../types"
+import type { PlayerLive, TeamHistorySeason, TeamRosterPlayer, TeamSeasonGameRow } from "../types"
 
 function num(v: unknown, decimals = 1): string {
   if (v == null || v === "") return "—"
@@ -16,6 +16,35 @@ function pct(v: unknown): string {
   if (n > 0 && n <= 1) return `.${Math.round(n * 1000).toString().padStart(3, "0")}`
   if (n > 1 && n <= 100) return `.${Math.round(n * 10).toString().padStart(3, "0")}`
   return String(v)
+}
+
+function ordinalRank(n: number): string {
+  const mod100 = n % 100
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`
+  const suffix = ["th", "st", "nd", "rd"][n % 10] ?? "th"
+  return `${n}${suffix}`
+}
+
+/** Standing + W-L from team_standings (Record, PlayoffRank, Conference). */
+export function mapTeamStandingsSnapshot(row: Record<string, unknown>): {
+  standing: string | null
+  record: string | null
+} {
+  const recordRaw = pick(row, "Record", "record")
+  const record =
+    recordRaw != null && String(recordRaw).trim() !== "" ? String(recordRaw) : null
+
+  const rankRaw = pick(row, "PlayoffRank", "playoffRank")
+  const conference = pick(row, "Conference", "conference")
+  let standing: string | null = null
+  if (rankRaw != null && conference != null) {
+    const rank = typeof rankRaw === "number" ? rankRaw : parseInt(String(rankRaw), 10)
+    if (!Number.isNaN(rank)) {
+      standing = `${ordinalRank(rank)} · ${conference}`
+    }
+  }
+
+  return { standing, record }
 }
 
 function pick(row: Record<string, unknown>, ...keys: string[]): unknown {
@@ -81,6 +110,11 @@ function opponentFromMatchup(matchup: string, teamAbbr: string): string {
     return t1 === team ? t2 : t1
   }
   return teamAbbr
+}
+
+/** Hollinger game score from a PerGame stat line (season or single game). */
+export function calcSeasonGameScore(row: Record<string, unknown>): number {
+  return calcGameScore(row)
 }
 
 function calcGameScore(row: Record<string, unknown>): number {
@@ -696,15 +730,64 @@ export function mapSeasonStatsToBubbles(row: Record<string, unknown> | null): Se
   }
 }
 
-export function mapTeamGameLogRow(row: Record<string, unknown>, index: number): TeamSeasonGameRow {
+function teamGameLabel(row: Record<string, unknown>, index: number): { label: string; gameId: string } {
   const gameDate = String(pick(row, "GAME_DATE") ?? "")
   const matchup = String(pick(row, "MATCHUP") ?? "")
   const gameId = String(pick(row, "GAME_ID") ?? index)
-  const values = generalValuesFromRow(row)
+  const label = gameDate ? `${gameDate.slice(5).replace("-", "/")} ${matchup}` : matchup
+  return { label, gameId }
+}
+
+export function mapTeamGameLogRow(row: Record<string, unknown>, index: number): TeamSeasonGameRow {
+  const { label, gameId } = teamGameLabel(row, index)
   return {
     id: `tgl-${gameId}`,
-    game: gameDate ? `${gameDate.slice(5).replace("-", "/")} ${matchup}` : matchup,
+    game: label,
     isLive: false,
-    values,
+    values: generalValuesFromRow(row),
+  }
+}
+
+export function mapTeamGameLogAdvancedRow(
+  row: Record<string, unknown>,
+  index: number,
+): TeamSeasonGameRow {
+  const { label, gameId } = teamGameLabel(row, index)
+  return {
+    id: `tgl-${gameId}`,
+    game: label,
+    isLive: false,
+    values: advancedValuesFromRow(row),
+  }
+}
+
+export function mapTeamHistoryRow(row: Record<string, unknown>): TeamHistorySeason {
+  const wins = pick(row, "W", "wins")
+  const losses = pick(row, "L", "losses")
+  const wl =
+    wins != null && losses != null ? `${wins}-${losses}` : String(pick(row, "wl", "WL") ?? "—")
+  return {
+    season: String(pick(row, "season", "SEASON") ?? "—"),
+    wl,
+    values: {
+      pts: num(pick(row, "PTS", "pts"), 1),
+      reb: num(pick(row, "REB", "reb"), 1),
+      ast: num(pick(row, "AST", "ast"), 1),
+      fg_pct: pct(pick(row, "FG_PCT", "fg_pct")),
+      fg3_pct: pct(pick(row, "FG3_PCT", "fg3_pct")),
+    },
+  }
+}
+
+export function mapTeamRosterRow(row: Record<string, unknown>): TeamRosterPlayer {
+  const playerId = String(pick(row, "PLAYER_ID", "player_id") ?? "")
+  const gp = pick(row, "GP", "gp")
+  const min = pick(row, "MIN", "min")
+  return {
+    id: playerId ? `nba-${playerId}` : `roster-${String(pick(row, "PLAYER_NAME") ?? "unknown")}`,
+    name: String(pick(row, "PLAYER_NAME", "player_name") ?? "—"),
+    position: gp != null ? `${num(gp, 0)} GP` : "—",
+    number: "—",
+    height: min != null ? `${num(min, 1)} MPG` : "—",
   }
 }

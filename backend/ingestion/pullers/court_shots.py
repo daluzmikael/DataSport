@@ -48,12 +48,18 @@ class _CourtShotJob(NamedTuple):
 
 
 def _player_ids_for_season(season: str) -> list[str]:
-    path = RAW_TABLE_DIRS["player_season_stats"] / season / "dash_regular_season_pergame.parquet"
-    df = load_parquet_if_exists(path)
-    if df is None or df.empty:
+    season_dir = RAW_TABLE_DIRS["player_season_stats"] / season
+    if not season_dir.is_dir():
         return []
-    col = "PLAYER_ID" if "PLAYER_ID" in df.columns else "player_id"
-    return sorted(df[col].astype(str).unique())
+    ids: set[str] = set()
+    for path in sorted(season_dir.glob("dash_*.parquet")):
+        df = load_parquet_if_exists(path)
+        if df is None or df.empty:
+            continue
+        col = "PLAYER_ID" if "PLAYER_ID" in df.columns else "player_id"
+        if col in df.columns:
+            ids.update(df[col].astype(str).unique())
+    return sorted(ids)
 
 
 def _court_shot_jobs(

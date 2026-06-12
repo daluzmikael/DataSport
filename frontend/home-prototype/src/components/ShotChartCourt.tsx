@@ -10,7 +10,8 @@ const SVG_W = COURT_RIGHT - COURT_LEFT + PADDING * 2
 const SVG_H = COURT_TOP - COURT_BOTTOM + PADDING * 2
 const HEX_RADIUS = 8
 
-export type ShotChartMode = "volume" | "accuracy"
+export type ShotChartMode = "volume" | "accuracy" | "hotspots" | "coldspots"
+export type ShotChartKind = "heatmap" | "zones"
 
 function toSvg(apiX: number, apiY: number): [number, number] {
   return [apiX - COURT_LEFT + PADDING, COURT_TOP - apiY + PADDING]
@@ -30,6 +31,30 @@ function getColor(value: number, mode: ShotChartMode): string {
     const g = Math.round(120 + t * 120)
     const b = Math.round(100 - t * 50)
     return `rgb(${r},${g},${b})`
+  }
+  if (mode === "hotspots") {
+    if (value < 0.33) {
+      const t = value / 0.33
+      return `rgb(${Math.round(80 - t * 40)}, ${Math.round(110 + t * 50)}, 60)`
+    }
+    if (value < 0.66) {
+      const t = (value - 0.33) / 0.33
+      return `rgb(${Math.round(40 - t * 20)}, ${Math.round(160 + t * 50)}, 60)`
+    }
+    const t = (value - 0.66) / 0.34
+    return `rgb(${Math.round(20 - t * 10)}, ${Math.round(210 + t * 30)}, ${Math.round(60 + t * 20)})`
+  }
+  if (mode === "coldspots") {
+    if (value < 0.33) {
+      const t = value / 0.33
+      return `rgb(${Math.round(230 - t * 40)}, ${Math.round(30 + t * 20)}, ${Math.round(30 + t * 10)})`
+    }
+    if (value < 0.66) {
+      const t = (value - 0.33) / 0.33
+      return `rgb(${Math.round(190 - t * 35)}, ${Math.round(50 + t * 15)}, ${Math.round(40 + t * 15)})`
+    }
+    const t = (value - 0.66) / 0.34
+    return `rgb(${Math.round(155 - t * 35)}, ${Math.round(65 + t * 10)}, ${Math.round(55 + t * 10)})`
   }
   if (value < 0.2) {
     const t = value / 0.2
@@ -87,6 +112,23 @@ function buildHexBins(shots: MockShot[], radius: number, mode: ShotChartMode): H
   }
 
   let binList = Object.values(bins).filter((b) => b.total >= 1)
+
+  if (mode === "hotspots") {
+    const qualified = binList.filter((b) => b.total >= 5)
+    if (qualified.length === 0) return binList.map((b) => ({ ...b, pct: b.made / b.total }))
+    qualified.sort((a, b) => a.made / a.total - b.made / b.total)
+    const cutoff = Math.max(1, Math.floor(qualified.length * 0.35))
+    return qualified.slice(-cutoff).map((b) => ({ ...b, pct: b.made / b.total }))
+  }
+
+  if (mode === "coldspots") {
+    const qualified = binList.filter((b) => b.total >= 5)
+    if (qualified.length === 0) return binList.map((b) => ({ ...b, pct: b.made / b.total }))
+    qualified.sort((a, b) => a.made / a.total - b.made / b.total)
+    const cutoff = Math.max(1, Math.floor(qualified.length * 0.35))
+    return qualified.slice(0, cutoff).map((b) => ({ ...b, pct: b.made / b.total }))
+  }
+
   if (mode === "accuracy") {
     binList = binList.filter((b) => b.total >= 3)
   }
@@ -164,14 +206,36 @@ function CourtLines() {
   )
 }
 
+const MODE_LABELS: Record<ShotChartMode, string> = {
+  volume: "Shot frequency",
+  accuracy: "Shooting accuracy",
+  hotspots: "Best shooting zones",
+  coldspots: "Worst shooting zones",
+}
+
 interface ShotChartCourtProps {
   shots: MockShot[]
   playerName: string
   subtitle?: string
+  chartKind?: ShotChartKind
+  defaultMode?: ShotChartMode
+  legendId?: string
 }
 
-export function ShotChartCourt({ shots, playerName, subtitle }: ShotChartCourtProps) {
-  const [mode, setMode] = useState<ShotChartMode>("volume")
+export function ShotChartCourt({
+  shots,
+  playerName,
+  subtitle,
+  chartKind = "heatmap",
+  defaultMode,
+  legendId = "protoShotLegend",
+}: ShotChartCourtProps) {
+  const initialMode =
+    defaultMode ?? (chartKind === "zones" ? "hotspots" : "volume")
+  const [mode, setMode] = useState<ShotChartMode>(initialMode)
+
+  const modeOptions: ShotChartMode[] =
+    chartKind === "zones" ? ["hotspots", "coldspots"] : ["volume", "accuracy"]
 
   const bins = useMemo(() => buildHexBins(shots, HEX_RADIUS, mode), [shots, mode])
   const maxVal = useMemo(
@@ -181,35 +245,43 @@ export function ShotChartCourt({ shots, playerName, subtitle }: ShotChartCourtPr
 
   const made = shots.filter((s) => s.shot_made_flag === 1).length
   const fgPct = shots.length ? ((made / shots.length) * 100).toFixed(1) : "0.0"
-
-  const modeLabel =
-    mode === "accuracy" ? "Shooting accuracy" : "Shot frequency"
+  const modeLabel = MODE_LABELS[mode]
   const legendColors = [0, 0.25, 0.5, 0.75, 1].map((v) => getColor(v, mode))
-  const legendLeft = mode === "accuracy" ? "Cold" : "Few"
-  const legendRight = mode === "accuracy" ? "Hot" : "Many"
+  const legendLeft =
+    mode === "volume" ? "Few" : mode === "accuracy" ? "Cold" : mode === "coldspots" ? "Worst" : "Good"
+  const legendRight =
+    mode === "volume" ? "Many" : mode === "accuracy" ? "Hot" : mode === "coldspots" ? "Bad" : "Best"
+  const title = chartKind === "zones" ? "Shooting zones" : "Shot heat map"
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Shot chart</h3>
+          <h3 className="text-sm font-semibold">{title}</h3>
           <p className="text-[11px] text-ds-muted">
-            {subtitle ?? "This game"} · {modeLabel} · {shots.length} FGA · {fgPct}% FG
+            {subtitle ?? "Season"} · {modeLabel} · {shots.length.toLocaleString()} FGA · {fgPct}%
+            FG
           </p>
         </div>
         <div className="flex rounded-lg border border-ds-border p-0.5 text-[11px]">
-          {(["volume", "accuracy"] as const).map((m) => (
+          {modeOptions.map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => setMode(m)}
-              className={`rounded-md px-2.5 py-1 font-medium capitalize transition ${
+              className={`rounded-md px-2.5 py-1 font-medium transition ${
                 mode === m
                   ? "bg-ds-accent/20 text-ds-accent"
                   : "text-ds-muted hover:text-ds-text"
               }`}
             >
-              {m === "volume" ? "Frequency" : "Accuracy"}
+              {m === "volume"
+                ? "Frequency"
+                : m === "accuracy"
+                  ? "Accuracy"
+                  : m === "hotspots"
+                    ? "Best"
+                    : "Worst"}
             </button>
           ))}
         </div>
@@ -220,7 +292,7 @@ export function ShotChartCourt({ shots, playerName, subtitle }: ShotChartCourtPr
         className="mx-auto h-auto w-full max-w-[520px] rounded-xl"
         style={{ background: "#0a0c10" }}
         role="img"
-        aria-label={`${playerName} shot chart`}
+        aria-label={`${playerName} ${title}`}
       >
         <CourtLines />
         {bins.map((bin, i) => {
@@ -230,9 +302,22 @@ export function ShotChartCourt({ shots, playerName, subtitle }: ShotChartCourtPr
           if (mode === "volume") {
             colorVal = bin.total / maxVal
             size = HEX_RADIUS * (0.5 + 0.5 * (bin.total / maxVal))
-          } else {
+          } else if (mode === "accuracy") {
             colorVal = Math.min(1, Math.max(0, bin.pct / 0.9))
             size = HEX_RADIUS * (0.5 + 0.5 * Math.min(1, bin.total / Math.max(maxVal * 0.3, 1)))
+          } else if (mode === "hotspots") {
+            const minPct = Math.min(...bins.map((b) => b.pct))
+            const maxPct = Math.max(...bins.map((b) => b.pct))
+            const range = maxPct - minPct || 0.01
+            colorVal = (bin.pct - minPct) / range
+            size = HEX_RADIUS * (0.45 + 0.55 * colorVal)
+          } else {
+            const minPct = Math.min(...bins.map((b) => b.pct))
+            const maxPct = Math.max(...bins.map((b) => b.pct))
+            const range = maxPct - minPct || 0.01
+            const normalized = (bin.pct - minPct) / range
+            colorVal = normalized
+            size = HEX_RADIUS * (0.45 + 0.55 * (1 - normalized))
           }
 
           return (
@@ -253,13 +338,13 @@ export function ShotChartCourt({ shots, playerName, subtitle }: ShotChartCourtPr
             {legendLeft}
           </text>
           <defs>
-            <linearGradient id="protoShotLegend">
+            <linearGradient id={legendId}>
               {legendColors.map((c, i) => (
                 <stop key={i} offset={`${i * 25}%`} stopColor={c} />
               ))}
             </linearGradient>
           </defs>
-          <rect x={28} y={-10} width={90} height={8} rx={2} fill="url(#protoShotLegend)" />
+          <rect x={28} y={-10} width={90} height={8} rx={2} fill={`url(#${legendId})`} />
           <text
             fill="rgba(255,255,255,0.45)"
             fontSize={9}

@@ -31,16 +31,27 @@ DATABASE
 - Use only table names listed in DATABASE SCHEMA below.
 - Tables (when staged): player_season_stats, team_season_stats, team_standings,
   player_shot_zones, team_shot_zones, player_game_logs, team_game_logs,
-  game_context, player_game_advanced, team_game_advanced, player_career, court_shots.
+  game_context, player_game_advanced, team_game_advanced, player_career, court_shots,
+  player_tracking, team_tracking, lineups, player_on_off,
+  player_estimated_metrics, team_estimated_metrics.
 - Use only table names listed in DATABASE SCHEMA below.
 
 SLICE COLUMNS (filter in WHERE; exact string match)
 - season: e.g. '2024-25' (hyphenated). Career rows use season = 'CAREER' when present.
 - season_type: 'Regular Season' or 'Playoffs'
-- per_mode: 'PerGame' or 'Totals' (career: 'CareerTotals')
+- per_mode: PerGame, Totals, Per100Possessions, Per36, Per40, …
+- measure_type: Base, Advanced, Usage, Misc, Scoring, Defense (season dash tables)
+- pt_measure_type: Drives, Passing, … (tracking tables)
 
 TABLE PICKING
 - Player season box score / leaderboards / player comparisons → player_season_stats
+  (default measure_type = 'Base', per_mode = 'PerGame')
+- Advanced metrics (TS%, USG%, NET_RATING, PIE) → player_season_stats
+  WHERE measure_type = 'Advanced' AND per_mode = 'PerGame'
+- NBA estimated impact (E_NET_RATING, …) → player_estimated_metrics
+- Player tracking (drives, passing, …) → player_tracking WHERE pt_measure_type = '…'
+- 5-man lineups → lineups WHERE group_quantity = 5
+- On/off court → player_on_off
 - Team season stats → team_season_stats
 - Standings, seeds, W-L, point differential → team_standings (no per_mode)
 - Player shot zones / shooting areas → player_shot_zones
@@ -60,6 +71,8 @@ SEASON MAPPING
 - Bare start year "2020" → season = '2020-21'
 - Playoffs: season_type = 'Playoffs'; regular: season_type = 'Regular Season'
 - Per-game stats: per_mode = 'PerGame'; season totals: per_mode = 'Totals'
+- Per-100-poss: per_mode = 'Per100Possessions'
+- Always set measure_type for season dash queries (default 'Base' for box score)
 - Clutch columns are prefixed clutch_ (already on player_season_stats / team_season_stats)
 - Hustle columns are prefixed hustle_
 

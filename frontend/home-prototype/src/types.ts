@@ -195,6 +195,10 @@ export interface PlayerLive {
   gameScore: number
   /** Season-to-date average game score (vault metric). */
   seasonAvgGameScore: number
+  /** NBA-native impact tier from Advanced / estimated metrics (not Game Score). */
+  impactLabel?: string
+  impactHeadlineScore?: number
+  impactHeadlineMetric?: string
   /** Rank among qualified players by season average game score (1 = best). */
   seasonGameScoreRank: number
   seasonGameScoreRankTotal?: number

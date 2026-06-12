@@ -233,26 +233,46 @@ export function DetailOverlay({
                 <ReferencedLabel label={playerRow.name} onReference={onReference} />
               </h1>
               <div className="flex shrink-0 items-stretch gap-2">
-                <div
-                  className="rounded-lg border border-ds-accent/35 bg-ds-accent/10 px-3 py-1 text-center"
-                  title="Season average game score and league rank"
-                >
-                  <p className="text-[9px] font-semibold uppercase tracking-wide text-ds-muted">
-                    Season GS
-                  </p>
-                  <p className="font-mono text-lg font-bold leading-tight tabular-nums text-ds-accent">
-                    {playerRow.seasonAvgGameScore.toFixed(1)}
-                  </p>
-                  <p className="mt-0.5 font-mono text-[11px] font-semibold leading-tight tabular-nums text-ds-text">
-                    #{playerRow.seasonGameScoreRank}
-                    {playerRow.seasonGameScoreRankTotal != null && (
-                      <span className="font-sans font-normal text-ds-muted">
-                        {" "}
-                        of {playerRow.seasonGameScoreRankTotal}
-                      </span>
+                {playerRow.impactLabel ? (
+                  <div
+                    className="rounded-lg border border-ds-accent/35 bg-ds-accent/10 px-3 py-1 text-center"
+                    title="NBA estimated impact tier (PIE / net rating)"
+                  >
+                    <p className="text-[9px] font-semibold uppercase tracking-wide text-ds-muted">
+                      Impact
+                    </p>
+                    <p className="text-sm font-bold leading-tight text-ds-accent">
+                      {playerRow.impactLabel}
+                    </p>
+                    {playerRow.impactHeadlineScore != null && (
+                      <p className="mt-0.5 font-mono text-[11px] font-semibold leading-tight tabular-nums text-ds-text">
+                        {playerRow.impactHeadlineMetric ?? "PIE"}{" "}
+                        {playerRow.impactHeadlineScore}
+                      </p>
                     )}
-                  </p>
-                </div>
+                  </div>
+                ) : (
+                  <div
+                    className="rounded-lg border border-ds-accent/35 bg-ds-accent/10 px-3 py-1 text-center"
+                    title="Season average game score and league rank"
+                  >
+                    <p className="text-[9px] font-semibold uppercase tracking-wide text-ds-muted">
+                      Season GS
+                    </p>
+                    <p className="font-mono text-lg font-bold leading-tight tabular-nums text-ds-accent">
+                      {playerRow.seasonAvgGameScore.toFixed(1)}
+                    </p>
+                    <p className="mt-0.5 font-mono text-[11px] font-semibold leading-tight tabular-nums text-ds-text">
+                      #{playerRow.seasonGameScoreRank}
+                      {playerRow.seasonGameScoreRankTotal != null && (
+                        <span className="font-sans font-normal text-ds-muted">
+                          {" "}
+                          of {playerRow.seasonGameScoreRankTotal}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
                 {profileStatus && (
                   <div className="rounded-lg border border-ds-border bg-ds-raised/80 px-2.5 py-1 text-center">
                     <p className="text-[9px] font-semibold uppercase tracking-wide text-ds-muted">
@@ -277,7 +297,6 @@ export function DetailOverlay({
               <p className="text-[10px] font-bold uppercase tracking-wider text-ds-muted">
                 Team profile
               </p>
-              <p className="mt-0.5 text-xs text-ds-muted">{teamProfile.seasonLabel} season</p>
             </div>
             <div className="absolute left-1/2 top-1/2 max-w-[calc(100%-7rem)] -translate-x-1/2 -translate-y-1/2 text-center">
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">

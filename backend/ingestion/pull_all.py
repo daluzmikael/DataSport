@@ -15,9 +15,15 @@ from datetime import datetime
 
 from ingestion.config import END_SEASON, GAME_PULL_ORDER, START_SEASON, ensure_data_dirs
 from ingestion.pullers.court_shots import pull_court_shots
+from ingestion.pullers.estimated_metrics import (
+    pull_player_estimated_metrics,
+    pull_team_estimated_metrics,
+)
 from ingestion.pullers.game_advanced import pull_game_advanced
 from ingestion.pullers.game_context import pull_game_context
 from ingestion.pullers.game_logs import build_game_id_manifest, pull_player_game_logs, pull_team_game_logs
+from ingestion.pullers.lineups import pull_lineups
+from ingestion.pullers.on_off import pull_player_on_off
 from ingestion.pullers.season_stats import (
     pull_player_career_stats,
     pull_player_season_stats,
@@ -25,6 +31,7 @@ from ingestion.pullers.season_stats import (
 )
 from ingestion.pullers.shot_zones import pull_player_shot_zones, pull_team_shot_zones
 from ingestion.pullers.standings import pull_team_standings
+from ingestion.pullers.tracking_stats import pull_player_tracking, pull_team_tracking
 from ingestion.utils.seasons import iter_seasons
 
 
@@ -47,7 +54,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Pull NBA stats into backend/data/raw/")
     parser.add_argument(
         "--phase",
-        choices=("1", "2", "3", "4", "5", "all"),
+        choices=("1", "2", "3", "4", "5", "6", "all"),
         default="all",
         help="Which pull phase to run",
     )
@@ -116,6 +123,15 @@ def main() -> None:
             max_players=args.max_shot_players,
             retry_failed_only=args.retry_failed_court_shots,
         )
+
+    if phase in ("6", "all"):
+        logging.info("=== Phase 6: tracking + lineups + on/off + estimated metrics ===")
+        pull_player_tracking(seasons)
+        pull_team_tracking(seasons)
+        pull_lineups(seasons)
+        pull_player_on_off(seasons)
+        pull_player_estimated_metrics(seasons)
+        pull_team_estimated_metrics(seasons)
 
     logging.info("Done.")
 

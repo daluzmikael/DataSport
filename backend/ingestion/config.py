@@ -9,6 +9,7 @@ RAW_ROOT = DATA_ROOT / "raw"
 STAGING_ROOT = DATA_ROOT / "staging"
 LOGS_ROOT = DATA_ROOT / "logs"
 MANIFESTS_ROOT = DATA_ROOT / "manifests"
+THIRD_PARTY_METRICS_ROOT = RAW_ROOT / "third_party_metrics"
 
 RAW_TABLE_DIRS = {
     "game_context": RAW_ROOT / "game_context",
@@ -22,13 +23,52 @@ RAW_TABLE_DIRS = {
     "team_season_stats": RAW_ROOT / "team_season_stats",
     "player_shot_zones": RAW_ROOT / "player_shot_zones",
     "team_shot_zones": RAW_ROOT / "team_shot_zones",
+    "player_tracking": RAW_ROOT / "player_tracking",
+    "team_tracking": RAW_ROOT / "team_tracking",
+    "lineups": RAW_ROOT / "lineups",
+    "player_on_off": RAW_ROOT / "player_on_off",
+    "player_estimated_metrics": RAW_ROOT / "player_estimated_metrics",
+    "team_estimated_metrics": RAW_ROOT / "team_estimated_metrics",
+    "third_party_metrics": THIRD_PARTY_METRICS_ROOT,
 }
 
 START_SEASON = "1996-97"
 END_SEASON = "2025-26"
 
 SEASON_TYPES = ("Regular Season", "Playoffs")
+
+# Legacy alias — Base PerGame/Totals only (extended pulls use PER_MODES_DASH_EXTENDED).
 PER_MODES_DASH = ("PerGame", "Totals")
+PER_MODES_DASH_EXTENDED = (
+    "PerGame",
+    "Totals",
+    "Per100Possessions",
+    "Per36",
+    "Per40",
+)
+
+MEASURE_TYPES_PLAYER_DASH = ("Base", "Advanced", "Usage", "Misc", "Scoring", "Defense")
+MEASURE_TYPES_TEAM_DASH = ("Base", "Advanced", "Misc", "Scoring", "Defense")
+MEASURE_TYPES_PLAYER_CLUTCH = ("Base", "Advanced", "Misc", "Scoring", "Usage")
+MEASURE_TYPES_TEAM_CLUTCH = ("Base", "Advanced", "Misc", "Scoring")
+
+PT_MEASURE_TYPES = (
+    "SpeedDistance",
+    "Rebounding",
+    "Possessions",
+    "CatchShoot",
+    "PullUpShot",
+    "Defense",
+    "Drives",
+    "Passing",
+    "ElbowTouch",
+    "PostTouch",
+    "PaintTouch",
+    "Efficiency",
+)
+
+LINEUP_GROUP_QUANTITIES = (5,)
+LINEUP_MEASURE_TYPES = ("Base", "Advanced", "Misc", "Four Factors", "Scoring", "Opponent")
 
 CLUTCH_DEFAULTS = {
     "clutch_time": "Last 5 Minutes",

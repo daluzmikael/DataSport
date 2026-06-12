@@ -20,22 +20,31 @@ python -m ingestion.pull_all --phase all --log-file
 
 | Phase | Tables | Notes |
 |-------|--------|-------|
-| 1 | season stats, standings, shot zones | Start here |
+| 1 | season stats, standings, shot zones | Extended measure types + per modes |
 | 2 | player/team game logs | Builds `data/manifests/game_ids.txt` |
 | 3 | game_context, game_advanced | Per game; slow |
-| 4 | career JSON per player | After phase 1 |
-| 5 | court_shots | Use `--max-shot-players 50` for pilot |
+| 4 | career JSON per player | Scans all dash slices for player IDs |
+| 5 | court_shots | Use `--max-shot-players 50` for pilot; `--retry-failed-court-shots` to backfill |
+| 6 | tracking, lineups, on/off, estimated metrics | New gap-fill endpoints |
 
 Resume via `data/manifests/pull_state.json`.
+
+### Season dash filename pattern
+
+```
+dash_{regular_season|playoffs}_{measure}_{permode}.parquet
+```
+
+Legacy Base files without measure slug (`dash_regular_season_pergame.parquet`) are still read by staging.
+
+**Measure types (player dash):** Base, Advanced, Usage, Misc, Scoring, Defense  
+**Per modes:** PerGame, Totals, Per100Possessions, Per36, Per40
 
 ## Staging (raw → unified tables)
 
 ```powershell
 python -m ingestion.stage_all --phase 1
-python -m ingestion.stage_all --phase 2
-python -m ingestion.stage_all --phase 3
-python -m ingestion.stage_all --phase 4
-python -m ingestion.stage_all --phase 5
+python -m ingestion.stage_all --phase 6
 python -m ingestion.stage_all --phase all
 ```
 
@@ -46,8 +55,11 @@ python -m ingestion.stage_all --phase all
 | 3 | game_context, player_game_advanced, team_game_advanced |
 | 4 | player_career |
 | 5 | court_shots |
+| 6 | player/team_tracking, lineups, player_on_off, estimated metrics |
 
-Phase 3 and 5 are slow (many files). Phase 1 is safe while pull still runs.
+## Third-party metrics (DARKO / EPM / LEBRON / RAPTOR)
+
+Not on stats.nba.com. See `data/raw/third_party_metrics/README.md` for Phase F research notes.
 
 ## Layout
 

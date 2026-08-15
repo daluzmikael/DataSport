@@ -1,9 +1,36 @@
+import json
 import os
 import time
 from dotenv import load_dotenv
 import pyrebase
 
 load_dotenv()
+
+_FRIENDLY_ERRORS = {
+    "EMAIL_EXISTS": "An account with that email already exists.",
+    "EMAIL_NOT_FOUND": "Invalid email or password.",
+    "INVALID_PASSWORD": "Invalid email or password.",
+    "INVALID_LOGIN_CREDENTIALS": "Invalid email or password.",
+    "USER_DISABLED": "This account has been disabled.",
+    "WEAK_PASSWORD": "Password should be at least 6 characters.",
+    "INVALID_EMAIL": "That email address doesn't look valid.",
+    "MISSING_PASSWORD": "Please enter a password.",
+    "TOO_MANY_ATTEMPTS_TRY_LATER": "Too many attempts. Please wait a bit and try again.",
+}
+
+
+def _friendly_auth_error(e: Exception) -> str:
+    raw = str(e)
+    try:
+        # pyrebase raises the raw response body as the exception message,
+        # formatted like: "[Errno 400 ...] { \"error\": { ... } }"
+        json_start = raw.index("{")
+        payload = json.loads(raw[json_start:])
+        message = payload.get("error", {}).get("message", "")
+        code = message.split(":")[0].strip()
+        return _FRIENDLY_ERRORS.get(code, "Something went wrong. Please try again.")
+    except (ValueError, KeyError):
+        return "Something went wrong. Please try again."
 
 firebase_config = {
     "apiKey": os.getenv("FIREBASE_API_KEY"),
@@ -27,7 +54,7 @@ def sign_up(email: str, password: str):
             "refreshToken": user['refreshToken'],
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": _friendly_auth_error(e)}
 
 def log_in(email: str, password: str):
     try:
@@ -39,7 +66,7 @@ def log_in(email: str, password: str):
             "refreshToken": user['refreshToken'],
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": _friendly_auth_error(e)}
 
 
 def verify_token(id_token: str):

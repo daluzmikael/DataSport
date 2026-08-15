@@ -7,6 +7,8 @@ import {
 } from "./data/mock"
 import { buildLiveDashboardFeed } from "./data/liveDashboardFeed"
 import { postAnalysis } from "./api/analysisClient"
+import { AuthProvider, useAuth } from "./contexts/AuthContext"
+import { ConversationProvider, useConversation } from "./contexts/ConversationContext"
 import { AnalyzerPanel } from "./components/AnalyzerPanel"
 import { ChatSidebar } from "./components/ChatSidebar"
 import { DetailOverlay } from "./components/DetailOverlay"
@@ -19,8 +21,9 @@ import { PlaceholderPage } from "./components/PlaceholderPage"
 import { StagingConnectionBar } from "./components/StagingConnectionBar"
 import type { ChatMessage, DetailTarget, NavPage } from "./types"
 
-export default function App() {
-  const [loggedIn, setLoggedIn] = useState(false)
+function AppShell() {
+  const { user } = useAuth()
+  const [loggedIn, setLoggedIn] = useState(!!user)
   const [nav, setNav] = useState<NavPage>("analyzer")
   const [activeThread, setActiveThread] = useState<string | null>(null)
   const [chatsOpen, setChatsOpen] = useState(false)
@@ -30,6 +33,7 @@ export default function App() {
   const [contextHint, setContextHint] = useState<string | null>(null)
   const [askDraft, setAskDraft] = useState("")
   const [referenceFocusKey, setReferenceFocusKey] = useState(0)
+  const { createConversation, saveMessage } = useConversation()
   const liveFeed = useMemo(() => buildLiveDashboardFeed(LIVE_FEED), [])
 
   const handleReference = useCallback((label: string) => {
@@ -46,6 +50,12 @@ export default function App() {
 
   const handleSend = useCallback(
     async (text: string) => {
+      let convId = activeThread
+      if (!convId) {
+        convId = createConversation()
+        setActiveThread(convId)
+      }
+
       const userMsg: ChatMessage = {
         id: `u-${Date.now()}`,
         role: "user",
@@ -67,31 +77,42 @@ export default function App() {
       setContextHint(null)
       setAskDraft("")
 
+      // Save user message to backend
+      await saveMessage(userMsg)
+
       try {
         const result = await postAnalysis(text, history)
+        const assistantMsg: ChatMessage = {
+          id: pendingId,
+          role: "assistant",
+          content: result.analysis,
+        }
         setMessages((prev) =>
           prev.map((m) =>
             m.id === pendingId
-              ? { id: pendingId, role: "assistant", content: result.analysis }
+              ? assistantMsg
               : m,
           ),
         )
+        // Save assistant response
+        await saveMessage(assistantMsg)
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err)
+        const errMsg: ChatMessage = {
+          id: pendingId,
+          role: "assistant",
+          content: `Couldn't reach the analyzer API. Is the backend running on :8000?\n\n${detail}`,
+        }
         setMessages((prev) =>
           prev.map((m) =>
             m.id === pendingId
-              ? {
-                  id: pendingId,
-                  role: "assistant",
-                  content: `Couldn't reach the analyzer API. Is the backend running on :8000?\n\n${detail}`,
-                }
+              ? errMsg
               : m,
           ),
         )
       }
     },
-    [messages],
+    [messages, activeThread, createConversation, saveMessage],
   )
 
   const handleAskFromDetail = useCallback(
@@ -184,5 +205,15 @@ export default function App() {
         onOpenTeam={(id) => setDetail({ type: "team", id })}
       />
     </>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ConversationProvider>
+        <AppShell />
+      </ConversationProvider>
+    </AuthProvider>
   )
 }

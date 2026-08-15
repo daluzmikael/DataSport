@@ -136,7 +136,7 @@ export function AnalyzerPanel({
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-ds-border bg-ds-panel/50 px-5 py-4">
+      <footer className="shrink-0 px-5 pb-8 pt-4">
         <form
           className="mx-auto flex max-w-2xl gap-2"
           onSubmit={(e) => {
@@ -149,7 +149,7 @@ export function AnalyzerPanel({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="Ask DataSport about stats, live games, or history…"
-            className="flex-1 rounded-xl border border-ds-border bg-ds-raised px-4 py-3 text-sm outline-none ring-ds-accent/30 focus:ring-2"
+            className="flex-1 rounded-xl border border-ds-border bg-ds-raised px-4 py-3 text-sm shadow-sm outline-none ring-ds-accent/30 focus:ring-2"
           />
           <button
             type="submit"

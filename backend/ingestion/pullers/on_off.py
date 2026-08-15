@@ -56,25 +56,11 @@ def pull_player_on_off(seasons: list[str] | None = None) -> None:
                             ),
                             key,
                         )
-                        datasets = ep.get_data_frames(return_names=True)
-                        if not isinstance(datasets, dict):
-                            frames = ep.get_data_frames()
-                            datasets = {
-                                "PlayersOnCourtTeamPlayerOnOffSummary": frames[2]
-                                if len(frames) > 2
-                                else frames[0],
-                                "PlayersOffCourtTeamPlayerOnOffSummary": frames[1]
-                                if len(frames) > 1
-                                else None,
-                            }
+                        frames = ep.get_data_frames()
                         parts: list[pd.DataFrame] = []
-                        for name in (
-                            "PlayersOnCourtTeamPlayerOnOffSummary",
-                            "PlayersOffCourtTeamPlayerOnOffSummary",
-                        ):
-                            part = datasets.get(name)
-                            if part is not None and not part.empty:
-                                parts.append(part)
+                        for idx in (2, 1):  # on-court, then off-court
+                            if len(frames) > idx and not frames[idx].empty:
+                                parts.append(frames[idx])
                         if not parts:
                             mark_done(PULL_STATE_FILE, key)
                             continue

@@ -1,6 +1,16 @@
 import logging
 import os
 import json
+import sys
+
+# Windows consoles default to cp1252, which cannot encode accented player names
+# ("Dončić", "Jokić") or curly quotes. Without this, a single print() of such a
+# question raises UnicodeEncodeError and the request 500s.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+    except (AttributeError, ValueError):  # not a reconfigurable text stream
+        pass
 
 # Align root log level with env before importing Interpreter/Executor (uvicorn may configure logging first).
 logging.getLogger().setLevel(
@@ -12,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Set
 from DashboardBackend.dashboardInterpreter import interpret_question
-from Analyzer.query_analyzer import analyze_question_with_data
+from Analyzer.query_analyzer import analyze_question_with_data, analyze_bundled_data
 from auth import (
     sign_up,
     log_in,
@@ -21,7 +31,10 @@ from auth import (
     get_conversation_messages,
     list_conversations,
 )
-from Interpreter.interpreter import run_query, debug_query_routing
+from Interpreter.interpreter import run_query, debug_query_routing, use_router_pipeline
+from Interpreter.pipeline import run_routed_query
+from Interpreter.sql_builder import bundles_to_records, primary_bundle_for_frontend
+from llm.client import LLMNotConfiguredError
 from openai import OpenAI
 import numpy as np
 import pandas as pd
@@ -33,8 +46,10 @@ from api.staging_reads import router as staging_router
 
 app.include_router(staging_router)
 
+from llm.client import openai_base_url
+
 context_client = (
-    OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url="https://us.api.openai.com/v1")
+    OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=openai_base_url())
     if os.getenv("OPENAI_API_KEY")
     else None
 )
@@ -719,11 +734,65 @@ async def analysis_endpoint(
                 }
             return payload
 
-        # Run the query once here; query_analyzer should only interpret the returned dataframe.
-        query_result = run_query(effective_question)
+        # Run query: router pipeline (multi-table) or legacy single-DataFrame path
+        router_mode = use_router_pipeline()
+        router_plan = None
+        table_bundles: Dict[str, Any] = {}
+
+        try:
+            if router_mode:
+                table_bundles, router_plan = run_routed_query(effective_question)
+                query_result = primary_bundle_for_frontend(table_bundles)
+            else:
+                query_result = run_query(effective_question)
+        except LLMNotConfiguredError as llm_exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"LLM API key not configured for router: {llm_exc}",
+            ) from llm_exc
+
+        # Call 1 rejected the question as needing more than one table.
+        if router_mode and router_plan is not None and not getattr(router_plan, "supported", True):
+            reason = (getattr(router_plan, "unsupported_reason", "") or "").strip()
+            message = (
+                "That question needs data from more than one table at once, which the "
+                "analyzer can't do yet — multi-table analysis is still a work in progress."
+            )
+            if reason:
+                message += f"\n\nWhy: {reason}"
+            message += (
+                "\n\nTry asking about one area at a time — for example season box-score "
+                "stats on their own, or tracking data on their own."
+            )
+            payload = {
+                "success": True,
+                "analysis": message,
+                "data": [],
+                "question": analysis_question,
+            }
+            if _analysis_debug_enabled():
+                payload["debug"] = {
+                    "historyContextApplied": history_context_applied,
+                    "historyContextReason": history_context_reason,
+                    "conversationId": request.conversationId,
+                    "originalQuestion": request.question,
+                    "effectiveQuestion": effective_question,
+                    "analysisQuestion": analysis_question,
+                    "interpreterPipeline": "router",
+                    "unsupportedReason": "multi_table_question",
+                    "routerReason": reason,
+                }
+            return payload
 
         # Handle empty or failed queries with a helpful message instead of crashing
-        if query_result is None or query_result.empty:
+        if router_mode:
+            empty = not table_bundles
+        else:
+            empty = query_result is None or (
+                isinstance(query_result, pd.DataFrame) and query_result.empty
+            )
+
+        if empty:
             payload = {
                 "success": True,
                 "analysis": (
@@ -743,31 +812,50 @@ async def analysis_endpoint(
                     "originalQuestion": request.question,
                     "effectiveQuestion": effective_question,
                     "analysisQuestion": analysis_question,
+                    "interpreterPipeline": "router" if router_mode else "legacy",
                 }
             return payload
 
         # Clean NaN before JSON serialization
-        clean_data = query_result.replace({np.nan: None}).to_dict(orient="records")
-
-        # Pass the already-fetched dataframe directly to the analyzer
-        # so it does NOT run a second query internally
-        analysis_result = analyze_question_with_data(analysis_question, query_result)
+        if router_mode:
+            clean_data = (
+                query_result.replace({np.nan: None}).to_dict(orient="records")
+                if not query_result.empty
+                else []
+            )
+            tables_payload = bundles_to_records(table_bundles)
+            analysis_result = analyze_bundled_data(
+                analysis_question, table_bundles, router_plan
+            )
+        else:
+            clean_data = query_result.replace({np.nan: None}).to_dict(orient="records")
+            tables_payload = None
+            analysis_result = analyze_question_with_data(analysis_question, query_result)
 
         payload = {
             "success": True,
             "analysis": analysis_result,
             "data": clean_data,
-            "question": analysis_question
+            "question": analysis_question,
         }
+        if tables_payload is not None:
+            payload["tables"] = tables_payload
         if _analysis_debug_enabled():
-            payload["debug"] = {
+            debug_info: Dict[str, Any] = {
                 "historyContextApplied": history_context_applied,
                 "historyContextReason": history_context_reason,
                 "conversationId": request.conversationId,
                 "originalQuestion": request.question,
                 "effectiveQuestion": effective_question,
                 "analysisQuestion": analysis_question,
+                "interpreterPipeline": "router" if router_mode else "legacy",
             }
+            if router_mode and router_plan is not None:
+                debug_info["routerPlan"] = router_plan.model_dump()
+                debug_info["bundleRowCounts"] = {
+                    k: len(v) for k, v in table_bundles.items()
+                }
+            payload["debug"] = debug_info
         return payload
 
     except Exception as e:

@@ -17,7 +17,9 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 _api_key = os.getenv("OPENAI_API_KEY")
-_client = OpenAI(api_key=_api_key, base_url="https://us.api.openai.com/v1") if _api_key else None
+from llm.client import openai_base_url
+
+_client = OpenAI(api_key=_api_key, base_url=openai_base_url()) if _api_key else None
 
 _STAGING_SQL_MODEL = os.getenv("STAGING_SQL_MODEL", "gpt-5.4-mini")
 

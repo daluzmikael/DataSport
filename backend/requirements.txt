@@ -4,6 +4,8 @@ requests
 psycopg2-binary
 python-dotenv
 openai
+anthropic
+pyyaml
 pydantic
 uvicorn
 fastapi
@@ -15,3 +17,4 @@ nba-api
 pyrebase4
 firebase-admin
 sqlglot
+pytest

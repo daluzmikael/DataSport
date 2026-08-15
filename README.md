@@ -27,10 +27,12 @@ nba_api  →  data/raw/  →  ingestion/stage_all  →  data/staging/*.parquet
                                                           ↓
                                               DuckDB views (Executer/)
                                                           ↓
-                    Interpreter (NL → SQL)  →  FastAPI  →  frontends
+         Router (LLM JSON plan)  →  SQL builder  →  FastAPI  →  frontends
+                    ↓                                      ↓
+              Analyst (LLM)  ←  multi-table row bundles
 ```
 
-**AI layer (optional):** OpenAI generates SQL and natural-language analysis. Staging read endpoints and DuckDB queries work without an API key.
+**AI layer (optional):** Two LLM calls per analyst question — router picks tables/slices (JSON), Python builds and runs SQL, analyst reads wide row bundles. Legacy single-call SQL generation remains via `INTERPRETER_PIPELINE=legacy`. Staging read endpoints work without an API key.
 
 **Auth (optional):** Firebase powers signup, login, and saved chat history in the production-style frontend.
 
@@ -186,16 +188,21 @@ After re-staging, restart the backend or `POST /api/staging/refresh`.
 |----------|---------|
 | `DATA_BACKEND` | `duckdb` (default) or `postgres` |
 | `STAGING_DATA_DIR` | Override path to staging Parquet folder |
-| `OPENAI_API_KEY` | GPT for SQL generation and analysis |
-| `STAGING_SQL_MODEL` | Model for staging SQL path (default `gpt-5.4-mini`) |
+| `INTERPRETER_PIPELINE` | `router` (default) or `legacy` for `/api/analysis` |
+| `OPENAI_API_KEY` | OpenAI for router/analyst when provider is `openai` |
+| `ANTHROPIC_API_KEY` | Anthropic when `ROUTER_PROVIDER` or `ANALYST_PROVIDER` is `anthropic` |
+| `ROUTER_PROVIDER` / `ROUTER_MODEL` | Call 1 — JSON table routing (default `openai` / `gpt-5.4`) |
+| `ANALYST_PROVIDER` / `ANALYST_MODEL` | Call 2 — multi-table analysis (default `openai` / `gpt-5.4`) |
+| `STAGING_SQL_MODEL` | Legacy SQL path only (`INTERPRETER_PIPELINE=legacy`) |
 | `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Legacy RDS connection |
 | `LOG_LEVEL` | Backend log level (default `INFO`) |
+| `FIREBASE_API_KEY` | Firebase auth for saved chat history (optional) |
 
 ## API Overview
 
 | Route | Description |
 |-------|-------------|
-| `POST /api/analysis` | Analyst chat — NL question → SQL → answer |
+| `POST /api/analysis` | Analyst chat — router plan → SQL bundles → answer (`tables` field when router mode) |
 | `POST /api/dashboards` | Dashboard chart generation |
 | `GET /api/staging/*` | Player/team search, stats, game logs, career, standings |
 | `POST /api/signup`, `POST /api/login` | Firebase auth |

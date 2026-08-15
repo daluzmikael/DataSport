@@ -257,4 +257,6 @@ export interface ChatMessage {
   id: string
   role: "user" | "assistant"
   content: string
+  /** True while a real API call for this message is in flight. */
+  pending?: boolean
 }

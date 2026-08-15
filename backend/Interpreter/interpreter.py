@@ -29,8 +29,10 @@ logger = logging.getLogger(__name__)
 api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     logger.warning("OpenAI API key missing from environment")
+from llm.client import openai_base_url
+
 client = (
-    OpenAI(api_key=api_key, base_url="https://us.api.openai.com/v1")
+    OpenAI(api_key=api_key, base_url=openai_base_url())
     if api_key
     else None
 )
@@ -2855,8 +2857,28 @@ Generate the SQL:"""
     return None
 
 
+def use_router_pipeline() -> bool:
+    """True when analyst should use router → SQL builder (DuckDB staging only)."""
+    from Executer.data_backend import use_duckdb_staging
+
+    mode = (os.getenv("INTERPRETER_PIPELINE") or "router").strip().lower()
+    return mode == "router" and use_duckdb_staging()
+
+
 def run_query(question: str):
+    if use_router_pipeline():
+        from Interpreter.pipeline import run_routed_query
+
+        bundles, _plan = run_routed_query(question)
+        return bundles
     return natural_language_to_sql(question)
+
+
+def run_routed_query_with_plan(question: str):
+    """Router pipeline returning both bundles and plan (for callers that need the plan)."""
+    from Interpreter.pipeline import run_routed_query
+
+    return run_routed_query(question)
 
 
 def debug_query_routing(user_input: str, model_sql: str):

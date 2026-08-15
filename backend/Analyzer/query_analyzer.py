@@ -15,8 +15,10 @@ from openai import OpenAI
 
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
+from llm.client import openai_base_url
+
 client = (
-    OpenAI(api_key=api_key, base_url="https://us.api.openai.com/v1")
+    OpenAI(api_key=api_key, base_url=openai_base_url())
     if api_key
     else None
 )
@@ -1555,15 +1557,25 @@ def _format_spatial_shots_narrative(df: pd.DataFrame, question: str, client: Any
 
 
 def analyze_question(question: str) -> str:
-    """Run a real-time question from the CLI and analyze the resulting DataFrame."""
+    """Run a real-time question from the CLI and analyze the resulting data."""
+    from Interpreter.interpreter import use_router_pipeline
+
     try:
+        if use_router_pipeline():
+            from Interpreter.pipeline import run_routed_query
+
+            bundles, plan = run_routed_query(question)
+            if not bundles:
+                return "Error: The query returned an empty result set."
+            return analyze_bundled_data(question, bundles, plan)
+
         df = run_query(question)
     except Exception as exc:
         return f"Error running query: {exc}"
-        
-    if df is None or getattr(df, 'empty', False):
+
+    if df is None or getattr(df, "empty", False):
         return "Error: The query returned an empty result set."
-        
+
     return analyze_question_with_data(question, df)
 
 
@@ -1820,6 +1832,199 @@ def analyze_question_with_data(question: str, df: pd.DataFrame) -> str:
         return "\n" + formatted_response.strip()
     except Exception as e:
         return f"Error during AI analysis: {str(e)}"
+
+
+_BUNDLE_CHAR_CAP = int(os.getenv("ANALYST_BUNDLE_CHAR_CAP", "48000"))
+# Rows are now column-pruned via the router's stat_focus, so a season span or a
+# leaderboard can be shown in full without blowing the character budget.
+_BUNDLE_ROW_CAP = int(os.getenv("ANALYST_BUNDLE_ROW_CAP", "30"))
+
+
+# Columns always worth showing: they identify the row and its slice.
+_IDENTITY_COLUMNS = (
+    "PLAYER_NAME", "player_name", "TEAM_NAME", "team_name", "TeamName", "teamName",
+    "GROUP_NAME", "TEAM_ABBREVIATION", "team_abbreviation", "TeamCity",
+    "season", "season_type", "per_mode", "pt_measure_type", "measure_type",
+    "GAME_DATE", "MATCHUP", "WL", "GP", "MIN", "W", "L", "W_PCT", "AGE",
+)
+
+
+def _select_analyst_columns(df: pd.DataFrame, stat_focus: list[str]) -> pd.DataFrame:
+    """Narrow a wide vault row to identity columns plus the stats in question.
+
+    The vault tables carry 30-190 columns; dumping all of them buries the answer and
+    burns tokens. When the router named a stat_focus we keep only those (plus their
+    _RANK partners); otherwise the full frame is passed through unchanged.
+    """
+    if not stat_focus:
+        return df
+
+    available = list(df.columns)
+    lookup = {c.lower(): c for c in available}
+
+    keep: list[str] = []
+    for col in _IDENTITY_COLUMNS:
+        real = lookup.get(col.lower())
+        if real and real not in keep:
+            keep.append(real)
+
+    for col in stat_focus:
+        real = lookup.get(col.lower())
+        if real and real not in keep:
+            keep.append(real)
+        rank = lookup.get(f"{col}_rank".lower())
+        if rank and rank not in keep:
+            keep.append(rank)
+
+    # Fall back to the full frame if pruning left nothing meaningful to analyse.
+    stat_cols = [c for c in keep if c.lower() not in {i.lower() for i in _IDENTITY_COLUMNS}]
+    if not stat_cols:
+        return df
+    return df[keep]
+
+
+def _serialize_bundles_for_analyst(
+    bundles: dict[str, pd.DataFrame],
+    stat_focus: list[str] | None = None,
+) -> str:
+    """Serialize labeled DataFrames within a character budget."""
+    if not bundles:
+        return ""
+
+    ordered = sorted(bundles.items(), key=lambda kv: kv[0])
+    parts: list[str] = []
+    total_chars = 0
+
+    for label, df in ordered:
+        narrowed = _select_analyst_columns(df, stat_focus or [])
+        display = _rename_columns_for_display(narrowed.head(_BUNDLE_ROW_CAP))
+        block = (
+            f"=== TABLE BUNDLE: {label} ===\n"
+            f"Rows returned: {df.shape[0]} (showing up to {_BUNDLE_ROW_CAP});"
+            f" columns shown: {display.shape[1]} of {df.shape[1]}\n"
+            f"{display.to_string(index=False)}\n"
+        )
+        if total_chars + len(block) > _BUNDLE_CHAR_CAP:
+            remaining = _BUNDLE_CHAR_CAP - total_chars
+            if remaining > 200:
+                parts.append(block[:remaining] + "\n... [truncated]\n")
+            break
+        parts.append(block)
+        total_chars += len(block)
+
+    return "\n".join(parts)
+
+
+def analyze_bundled_data(
+    question: str,
+    bundles: dict[str, pd.DataFrame],
+    plan: Any,
+) -> str:
+    """
+    Analyze the row bundle returned by the router pipeline (Call 2).
+
+    Shape of the answer: state the statistical result first, then explain the
+    numbers behind it. Everything must come from the rows provided.
+    """
+    from Interpreter.router_plan import RouterPlan
+
+    if not bundles:
+        return "No data was found for this question in the vault."
+
+    is_plan = isinstance(plan, RouterPlan)
+    entities = plan.entities if is_plan else []
+    stat_focus = plan.stat_focus if is_plan else []
+    table = (plan.table if is_plan else None) or "the staged table"
+    season_label = plan.season_label() if is_plan else "unspecified"
+    season_type = plan.season_type if is_plan else "Regular Season"
+    per_modes = ", ".join(plan.per_modes) if is_plan and plan.per_modes else "PerGame"
+    topic = (plan.topic if is_plan else None) or "general"
+    citation = plan.citation() if is_plan else f"table={table}"
+
+    is_comparison = len(entities) >= 2
+    is_leaderboard = is_plan and plan.is_leaderboard()
+    is_trend = is_plan and plan.is_multi_season()
+
+    bundle_text = _serialize_bundles_for_analyst(bundles, stat_focus)
+
+    system_prompt = (
+        "You are an NBA analyst writing for someone who asked a specific statistical "
+        "question. You are given rows pulled from ONE table of a stats vault.\n\n"
+        "ANSWER SHAPE — follow this order every time:\n"
+        "1. LEAD WITH THE ANSWER. First line answers the question directly and names the "
+        "result, ranked if the question implies an order. No preamble, no restating the "
+        "question, no throat-clearing.\n"
+        "2. THE NUMBERS. A short bullet list carrying the specific figures that produced "
+        "that answer, one bullet per subject or per season as appropriate.\n"
+        "3. THE CONTEXT. Prose explaining WHY the numbers came out that way: which "
+        "underlying stats drove the result, where the leader was actually weaker, where "
+        "someone behind them was stronger, and what that pattern implies about how they "
+        "played. This is the part that should read like an analyst talking, not a table.\n\n"
+        "RULES:\n"
+        "- Use ONLY numbers present in the rows below. Never estimate, infer a missing "
+        "value, or bring in outside knowledge about a player, team, award or event.\n"
+        "- If a stat needed to fully answer the question is not in the rows, say plainly "
+        "that it is not in the data rather than substituting something else.\n"
+        "- Blank, null or dash values mean the vault has no value there. Say so; do not "
+        "treat them as zero.\n"
+        "- Numbers are already in the units of the per_mode shown. Per-game values are "
+        "averages; totals are season sums. Do not convert between them.\n"
+        "- Write about basketball, not about the query. Never mention rows, slices, "
+        "bundles, tables, columns or 'the data provided' in the body of the answer — "
+        "the reader asked about players, not about a database. The single source line "
+        "at the end is the only place provenance appears.\n"
+        "- Name stats the way a broadcast would — points, minutes, rebounds, net "
+        "rating, three-point percentage — never the raw column identifier such as "
+        "PLUS_MINUS, E_NET_RATING or FG3_PCT.\n"
+        "- Round for readability: one decimal for per-game and minute values, whole "
+        "numbers for counts and single-game totals, and percentages as a percentage "
+        "to one decimal. Never print a value like 44.716667.\n"
+        "- Close with one short line citing the source slice you used: season(s), "
+        "season type, per mode, and the table name.\n"
+        "- Markdown: bold for key figures, bullets for the numbers section, plain prose "
+        "for the context section. No headings, no tables.\n"
+    )
+
+    if is_comparison:
+        system_prompt += (
+            "\nThis is a head-to-head comparison. Name a clear winner in the first line, "
+            "cover every subject in the numbers, and in the context explain the trade-off "
+            "— what the winner gave up and where the other was genuinely better.\n"
+        )
+    elif is_leaderboard:
+        system_prompt += (
+            "\nThis is a leaderboard. Lead with the ordered top names and their figures, "
+            "then use the context to explain what separates the top from the rest.\n"
+        )
+    elif is_trend:
+        system_prompt += (
+            "\nThis spans multiple seasons. Lead with the overall direction and name the "
+            "peak and trough seasons with their values, then explain the shape of the "
+            "trajectory rather than walking through every season one by one.\n"
+        )
+
+    user_prompt = (
+        f"Question: {question}\n"
+        f"Topic: {topic}\n"
+        f"Subjects: {', '.join(entities) or 'league-wide (no named subject)'}\n"
+        f"Season(s): {season_label} | Season type: {season_type} | Per mode: {per_modes}\n"
+        f"Source table: {table}\n"
+        f"Stats in focus: {', '.join(stat_focus) or 'not narrowed'}\n\n"
+        f"{bundle_text}\n\n"
+        f"Answer using only the rows above. Cite this slice at the end: {citation}"
+    )
+
+    try:
+        from llm.client import LLMNotConfiguredError, analyst_completion
+
+        raw = analyst_completion(system_prompt, user_prompt)
+        formatted = raw.replace("###", "\n\n###").replace("####", "\n\n####")
+        return "\n" + formatted.strip()
+    except LLMNotConfiguredError as exc:
+        return f"Error during AI analysis: {exc}"
+    except Exception as e:
+        return f"Error during AI analysis: {str(e)}"
+
 
 if __name__ == "__main__":
     import argparse

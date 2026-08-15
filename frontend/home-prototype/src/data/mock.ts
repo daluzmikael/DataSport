@@ -349,13 +349,12 @@ export function getPlayerProfile(playerId: string): PlayerLive | undefined {
 export const CHAT_THREADS: ChatThread[] = [
   { id: "t1", title: "Celtics 3PT shooting tonight", updatedAt: "2h ago", folder: "live" },
   { id: "t2", title: "Jordan best 3PT season", updatedAt: "Yesterday" },
-  { id: "t3", title: "Tatum vs Brown usage 2024-25", updatedAt: "3d ago", folder: "projects" },
-  { id: "t4", title: "West playoff odds deep dive", updatedAt: "1w ago", folder: "projects" },
+  { id: "t3", title: "Tatum vs Brown usage 2024-25", updatedAt: "3d ago" },
+  { id: "t4", title: "West playoff odds deep dive", updatedAt: "1w ago" },
 ]
 
 export const CHAT_FOLDERS: ChatFolder[] = [
   { id: "live", name: "Live context", threadIds: ["t1"] },
-  { id: "projects", name: "Projects", threadIds: ["t3", "t4"] },
 ]
 
 export const SAMPLE_MESSAGES: ChatMessage[] = [

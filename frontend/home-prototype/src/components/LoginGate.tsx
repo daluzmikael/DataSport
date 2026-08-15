@@ -40,7 +40,7 @@ export function LoginGate({ onEnter }: LoginGateProps) {
           </label>
           <button
             type="submit"
-            className="w-full rounded-lg bg-ds-accent py-2.5 font-semibold text-ds-bg transition hover:bg-ds-accent-dim"
+            className="w-full rounded-lg border border-ds-accent-vivid py-2.5 font-heading font-semibold text-ds-accent-vivid transition hover:bg-ds-accent-vivid/12"
           >
             Log in
           </button>

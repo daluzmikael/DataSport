@@ -21,8 +21,13 @@ import {
 import { resolveNbaTeamId, teamAbbrFromProfileId } from "../api/nbaIds"
 import type { GameLogRow, GameLogTab } from "../data/playerGameLogMock"
 import { getTeamSeasonGameLog, getTeamSeasonOptions } from "../data/teamSeasonGameLogBuilder"
-import { leaderApiStat, mapLeaderRows } from "../api/teamLeaderStats"
-import type { TeamLeaderStatId, TeamSeasonLeaderEntry } from "../data/teamSeasonLeadersMock"
+import { leaderApiStat, mapLeaderRow, mapLeaderRows } from "../api/teamLeaderStats"
+import {
+  getTeamSeasonLeaders,
+  TEAM_LEADER_STAT_OPTIONS,
+  type TeamLeaderStatId,
+  type TeamSeasonLeaderEntry,
+} from "../data/teamSeasonLeadersMock"
 import { getTeamFranchiseAccolades } from "../data/teamFranchiseFacts"
 import { getTeamSeasonRoster } from "../data/teamSeasonRosterBuilder"
 import type {
@@ -212,6 +217,47 @@ export function useStagingTeamLeaders(
     leaders,
     fromApi,
   }
+}
+
+/** All 12 per-stat leaders in one shot, for the full Season Leaders table. */
+export function useStagingTeamAllLeaders(profile: TeamProfile, season: string) {
+  const nbaId = teamNbaId(profile)
+  const mock = getTeamSeasonLeaders(profile, season)
+  const [leaders, setLeaders] = useState<Record<TeamLeaderStatId, TeamSeasonLeaderEntry>>(mock)
+  const [fromApi, setFromApi] = useState(false)
+
+  useEffect(() => {
+    if (!nbaId) {
+      setLeaders(getTeamSeasonLeaders(profile, season))
+      setFromApi(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const entries = await Promise.all(
+        TEAM_LEADER_STAT_OPTIONS.map(async ({ id }) => {
+          const apiStat = leaderApiStat(id)
+          if (!apiStat) return [id, null] as const
+          const rows = await fetchTeamLeaders(nbaId, season, apiStat)
+          return [id, rows?.[0] ?? null] as const
+        }),
+      )
+      if (cancelled) return
+      const mockFallback = getTeamSeasonLeaders(profile, season)
+      const anyResolved = entries.some(([, row]) => row != null)
+      const result = {} as Record<TeamLeaderStatId, TeamSeasonLeaderEntry>
+      for (const [id, row] of entries) {
+        result[id] = row ? mapLeaderRow(id, row) : mockFallback[id]
+      }
+      setLeaders(result)
+      setFromApi(anyResolved)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [nbaId, season, profile.id])
+
+  return { leaders, fromApi }
 }
 
 export function useStagingTeamSeasonSnapshot(profile: TeamProfile, season: string) {

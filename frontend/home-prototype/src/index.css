@@ -1,17 +1,26 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Lora:wght@400;600&display=swap");
 
+/*
+ * "Classical" theme — ported from the Claude Design handoff
+ * (frontend/design_handoff_datasport_analyzer). Editorial, light,
+ * warm-neutral ground with a single gold accent used as stroke/text,
+ * never as a solid fill. See design-system/readme.md in the handoff
+ * for the full rationale.
+ */
 :root {
-  --background: #0c0f14;
-  --foreground: #e8edf4;
-  --card: #141a22;
-  --card-foreground: #e8edf4;
-  --muted-foreground: #8b9aaf;
-  --border: #2a3544;
-  --chart-1: 152 62% 52%;
+  --background: #f3f2f2;
+  --foreground: #201f1d;
+  --card: #f3f2f2;
+  --card-foreground: #201f1d;
+  --muted-foreground: #7d7979;
+  --border: color-mix(in srgb, #201f1d 16%, transparent);
+  --chart-1: 34 51% 47%;
 }
 
 @theme {
-  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-sans: "Lora", system-ui, sans-serif;
+  --font-heading: "Cormorant Garamond", system-ui, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -19,18 +28,71 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --color-ds-bg: #0c0f14;
-  --color-ds-panel: #141a22;
-  --color-ds-raised: #1a222d;
-  --color-ds-border: #2a3544;
-  --color-ds-muted: #8b9aaf;
-  --color-ds-text: #e8edf4;
-  --color-ds-accent: #3dd68c;
-  --color-ds-accent-dim: #2a9d63;
-  --color-ds-live: #ff4d5e;
-  --color-ds-nba: #f58426;
-  --color-ds-warn: #facc15;
-  --color-ds-gold: #d4a853;
+
+  /* Page ground vs. card surface (design: --color-surface / --color-bg) */
+  --color-ds-bg: #eae9e9;
+  --color-ds-panel: #f3f2f2;
+  --color-ds-raised: #eae7e7;
+  --color-ds-border: color-mix(in srgb, #201f1d 16%, transparent);
+  --color-ds-muted: #7d7979;
+  --color-ds-text: #201f1d;
+
+  /* Accent: vivid for borders/underlines/pills, "-700" step for
+     paragraph-size text (contrast-safe on this light ground) */
+  --color-ds-accent-vivid: #b68235;
+  --color-ds-accent: #7d5411;
+  --color-ds-accent-dim: #a06f24;
+  --color-ds-accent-100: #fff3e4;
+  --color-ds-accent-400: #e1ad66;
+
+  --color-ds-live: #9c3b30;
+  --color-ds-nba: #a06f24;
+  --color-ds-warn: #8a6a1a;
+  --color-ds-gold: #b68235;
+
+  /* Dark nav rail keeps its own ramp regardless of the light theme */
+  --color-ds-nav-bg: #2d2b2b;
+  --color-ds-nav-border: #605d5d;
+  --color-ds-nav-icon: #d7d3d3;
+  --color-ds-nav-icon-active: #e1ad66;
+  --color-ds-nav-icon-active-bg: color-mix(in srgb, #e1ad66 22%, transparent);
+  --color-ds-nav-icon-muted: #605d5d;
+
+  /* Tighter, editorial radius scale (design: 2 / 4 / 7px) */
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
+}
+
+@keyframes slideInFromBoard {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutToBoard {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+.ds-slide-in {
+  animation: slideInFromBoard 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ds-slide-out {
+  animation: slideOutToBoard 0.42s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 * {

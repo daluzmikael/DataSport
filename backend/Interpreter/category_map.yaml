@@ -1,0 +1,128 @@
+# Category → table routing for the analyst router (Call 1).
+# The router picks categories from the user question, then emits table_requests
+# using these hints. SQL is built deterministically in Python — no column picking here.
+
+categories:
+  scoring:
+    description: Points, scoring volume, shot attempts, basic box score offense
+    tables:
+      - table: player_season_stats
+        measure_types: [Base, Scoring]
+        per_modes: [PerGame, Totals]
+      - table: team_season_stats
+        measure_types: [Base, Scoring]
+        per_modes: [PerGame, Totals]
+
+  efficiency:
+    description: TS%, eFG%, offensive rating, PIE, advanced shooting efficiency
+    tables:
+      - table: player_season_stats
+        measure_types: [Advanced]
+        per_modes: [PerGame]
+      - table: team_season_stats
+        measure_types: [Advanced]
+        per_modes: [PerGame]
+
+  defense:
+    description: Defensive box score, steals, blocks, defensive rating, opponent FG%
+    tables:
+      - table: player_season_stats
+        measure_types: [Defense, Base]
+        per_modes: [PerGame, Totals]
+      - table: player_tracking
+        pt_measure_types: [Defense]
+        per_modes: [PerGame]
+
+  hustle:
+    description: Contested shots, deflections, loose balls, charges, screen assists
+    tables:
+      - table: player_season_stats
+        measure_types: [Base]
+        per_modes: [PerGame, Totals]
+        note: hustle_* columns merged on dash rows
+
+  paint_rim:
+    description: Paint touches, rim protection, contests at rim, restricted area
+    tables:
+      - table: player_tracking
+        pt_measure_types: [PaintTouch, Defense, Rebounding]
+        per_modes: [PerGame]
+      - table: court_shots
+        per_modes: []
+
+  playmaking:
+    description: Assists, potential assists, turnover rate, playmaking tracking
+    tables:
+      - table: player_season_stats
+        measure_types: [Base, Advanced]
+        per_modes: [PerGame]
+      - table: player_tracking
+        pt_measure_types: [Passing, Drives]
+        per_modes: [PerGame]
+
+  rebounding:
+    description: Rebound rate, offensive/defensive boards, rebounding tracking
+    tables:
+      - table: player_season_stats
+        measure_types: [Base, Advanced]
+        per_modes: [PerGame]
+      - table: player_tracking
+        pt_measure_types: [Rebounding]
+        per_modes: [PerGame]
+
+  shot_diet:
+    description: Shot zones, shot chart areas, 3PT vs rim frequency
+    tables:
+      - table: player_shot_zones
+      - table: team_shot_zones
+      - table: court_shots
+
+  lineup_impact:
+    description: 5-man lineup net rating, lineup minutes
+    tables:
+      - table: lineups
+        group_quantity: 5
+        measure_types: [Base, Advanced]
+        per_modes: [PerGame]
+
+  on_off:
+    description: On-court vs off-court impact splits
+    tables:
+      - table: player_on_off
+        per_modes: [PerGame, Totals]
+
+  movement_tracking:
+    description: Speed, distance, drives, touches, elbow/post touches
+    tables:
+      - table: player_tracking
+        pt_measure_types: [SpeedDistance, Drives, ElbowTouch, PostTouch, Possessions]
+        per_modes: [PerGame]
+
+  estimated_impact:
+    description: NBA estimated metrics (E_NET_RATING, E_OFF_RATING, etc.)
+    tables:
+      - table: player_estimated_metrics
+      - table: team_estimated_metrics
+
+  game_logs:
+    description: Game-by-game performance, recent form, single-game outliers
+    tables:
+      - table: player_game_logs
+      - table: player_game_advanced
+
+  usage:
+    description: Usage rate, possession share, shot volume context
+    tables:
+      - table: player_season_stats
+        measure_types: [Usage, Advanced]
+        per_modes: [PerGame]
+
+slice_defaults:
+  season_type: Regular Season
+  per_mode: PerGame
+  measure_type: Base
+
+season_mapping:
+  bare_year_2020: "2020-21"
+  bare_year_2023: "2023-24"
+  note: "Bare calendar start years map to NBA season labels (e.g. 2023 → 2023-24)."

@@ -16,8 +16,10 @@ if api_key_env:
     logger.debug("OpenAI API key loaded from environment")
 else:
     logger.warning("OPENAI_API_KEY is not set")
+from llm.client import openai_base_url
+
 client = (
-    OpenAI(api_key=api_key_env, base_url="https://us.api.openai.com/v1")
+    OpenAI(api_key=api_key_env, base_url=openai_base_url())
     if api_key_env
     else None
 )

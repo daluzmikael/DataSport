@@ -31,6 +31,7 @@ import { AskReferenceButton, ReferencedLabel } from "./AskReferenceButton"
 
 interface DetailOverlayProps {
   target: DetailTarget
+  closing?: boolean
   onClose: () => void
   onAsk: (prefill: string) => void
   askDraft: string
@@ -45,6 +46,7 @@ interface DetailOverlayProps {
 
 export function DetailOverlay({
   target,
+  closing = false,
   onClose,
   onAsk,
   askDraft,
@@ -150,7 +152,9 @@ export function DetailOverlay({
   const gameOpponentAbbr = gameSnapshot?.player.opponentAbbr ?? playerRow?.opponentAbbr
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-ds-bg">
+    <div
+      className={`fixed inset-y-0 left-16 right-0 z-50 flex flex-col bg-ds-bg ${closing ? "ds-slide-out" : "ds-slide-in"}`}
+    >
       <header
         className={`relative shrink-0 border-b border-ds-border px-4 py-3 ${
           playerRow || teamProfile ? "min-h-[4.5rem]" : ""
@@ -423,11 +427,11 @@ export function DetailOverlay({
             value={askDraft}
             onChange={(e) => onAskDraftChange(e.target.value)}
             placeholder="Ask DataSport… reference names with the magnifying glass"
-            className="flex-1 rounded-xl border-2 border-ds-accent/50 bg-ds-raised px-4 py-3 text-sm outline-none focus:border-ds-accent"
+            className="flex-1 rounded-xl border border-ds-accent-vivid/60 bg-ds-raised px-4 py-3 text-sm outline-none focus:border-ds-accent-vivid"
           />
           <button
             type="submit"
-            className="rounded-xl bg-ds-accent px-5 py-3 text-sm font-semibold text-ds-bg hover:bg-ds-accent-dim"
+            className="rounded-xl border border-ds-accent-vivid px-5 py-3 font-heading text-sm font-semibold text-ds-accent-vivid hover:bg-ds-accent-vivid/12"
           >
             Ask
           </button>

@@ -1,0 +1,250 @@
+# Table catalog for the analyst router (Call 1).
+#
+# Authored against the REAL staged parquet schema (17 wide tables).
+# The new vault is intentionally few-tables-but-wide: one row already carries
+# base + clutch_* + hustle_* + *_RANK, so almost every question is answerable
+# from ONE table with a season filter. No joins, no unions.
+#
+# Rendering: see router_plan.table_catalog_prompt_text(). Only tables actually
+# registered in DuckDB are shown to the model, so a missing parquet file simply
+# disappears from the menu instead of producing a broken plan.
+
+tables:
+  player_season_stats:
+    entity: player
+    grain: one row per player per season per per_mode
+    name_column: PLAYER_NAME
+    slices: [season, season_type, per_mode]
+    covers: >-
+      Player season box score and the default table for most player questions:
+      scoring, shooting splits, rebounding, assists, turnovers, steals, blocks,
+      fouls, plus/minus, double/triple doubles, clutch splits, hustle stats,
+      and league rank columns.
+    key_columns: [GP, W, L, W_PCT, MIN, PTS, FGM, FGA, FG_PCT, FG3M, FG3A, FG3_PCT,
+                  FTM, FTA, FT_PCT, OREB, DREB, REB, AST, TOV, STL, BLK, PF,
+                  PLUS_MINUS, DD2, TD3, AGE, TEAM_ABBREVIATION]
+    column_families:
+      - "<STAT>_RANK — league rank for that stat in that season"
+      - "clutch_* — same box score restricted to clutch minutes"
+      - "hustle_* — contested shots, deflections, charges, screen assists, box outs, loose balls"
+    limits: >-
+      Does NOT contain TS%, eFG%, USG%, PIE, PACE, or offensive/defensive/net
+      rating. For season-level efficiency and impact use player_estimated_metrics.
+
+  team_season_stats:
+    entity: team
+    grain: one row per team per season per per_mode
+    name_column: TEAM_NAME
+    slices: [season, season_type, per_mode]
+    covers: >-
+      Team season box score, clutch splits, hustle stats and rank columns.
+      Use for team scoring, shooting, rebounding and turnover questions.
+    key_columns: [GP, W, L, W_PCT, MIN, PTS, FGM, FGA, FG_PCT, FG3M, FG3A, FG3_PCT,
+                  FTM, FTA, FT_PCT, OREB, DREB, REB, AST, TOV, STL, BLK, PF, PLUS_MINUS]
+    column_families:
+      - "<STAT>_RANK, clutch_*, hustle_* — same pattern as player_season_stats"
+    limits: >-
+      No advanced ratings. For team efficiency and pace use team_estimated_metrics.
+
+  player_estimated_metrics:
+    entity: player
+    grain: one row per player per season
+    name_column: PLAYER_NAME
+    slices: [season, season_type]
+    covers: >-
+      Season-level advanced impact and efficiency for players. This is the ONLY
+      season table with rating/usage/pace style metrics.
+    key_columns: [GP, W, L, W_PCT, MIN, E_OFF_RATING, E_DEF_RATING, E_NET_RATING,
+                  E_USG_PCT, E_PACE, E_AST_RATIO, E_OREB_PCT, E_DREB_PCT, E_REB_PCT,
+                  E_TOV_PCT, E_NET_RATING_RANK, E_OFF_RATING_RANK, E_DEF_RATING_RANK]
+    limits: >-
+      No per_mode column. Metrics are NBA "estimated" versions (E_ prefix).
+      True TS%/eFG%/PIE are not available at season level.
+
+  team_estimated_metrics:
+    entity: team
+    grain: one row per team per season
+    name_column: TEAM_NAME
+    slices: [season, season_type]
+    covers: Season-level team advanced impact, efficiency and pace.
+    key_columns: [GP, W, L, W_PCT, MIN, E_OFF_RATING, E_DEF_RATING, E_NET_RATING,
+                  E_PACE, E_AST_RATIO, E_OREB_PCT, E_DREB_PCT, E_REB_PCT, E_TM_TOV_PCT]
+    limits: No per_mode column.
+
+  player_game_logs:
+    entity: player
+    grain: one row per player per game
+    name_column: PLAYER_NAME
+    slices: [season, season_type]
+    covers: >-
+      Game-by-game player box scores. Use for single-game questions, career or
+      season highs in a game, recent form, streaks, and game-level splits.
+    key_columns: [GAME_ID, GAME_DATE, MATCHUP, WL, MIN, PTS, FGM, FGA, FG_PCT,
+                  FG3M, FG3A, FG3_PCT, FTM, FTA, FT_PCT, OREB, DREB, REB, AST,
+                  TOV, STL, BLK, PF, PLUS_MINUS, TEAM_ABBREVIATION]
+    limits: No per_mode column. One row is one game, not a season average.
+
+  team_game_logs:
+    entity: team
+    grain: one row per team per game
+    name_column: TEAM_NAME
+    slices: [season, season_type]
+    covers: Game-by-game team box scores, results and schedule-shaped questions.
+    key_columns: [GAME_ID, GAME_DATE, MATCHUP, WL, MIN, PTS, FG_PCT, FG3M, FG3A,
+                  FG3_PCT, REB, AST, TOV, STL, BLK, PLUS_MINUS]
+    limits: No per_mode column.
+
+  team_standings:
+    entity: team
+    grain: one row per team per season
+    name_column: TeamName
+    slices: [season, season_type]
+    covers: >-
+      Standings and record context: wins, losses, win pct, conference and
+      division rank, playoff seeding, home/road splits, streaks, last 10,
+      points per game for and against.
+    key_columns: [TeamCity, Conference, Division, PlayoffRank, DivisionRank,
+                  WINS, LOSSES, WinPCT, Record, HOME, ROAD, L10, CurrentStreak,
+                  LongWinStreak, PointsPG, OppPointsPG, DiffPointsPG, ClinchIndicator]
+    limits: >-
+      Regular Season only. No per_mode column. Column names are CamelCase here,
+      unlike most other tables.
+
+  player_shot_zones:
+    entity: player
+    grain: one row per player per season per per_mode
+    name_column: player_name
+    slices: [season, season_type, per_mode]
+    covers: >-
+      Player shooting broken out by court zone: restricted area, paint
+      (non restricted area), midrange, left/right corner three, above the break
+      three, backcourt. Each zone has fgm, fga and fg_pct.
+    key_columns: [restricted_area_fgm, restricted_area_fga, restricted_area_fg_pct,
+                  in_the_paint_nonra_fg_pct, midrange_fgm, midrange_fga, midrange_fg_pct,
+                  corner_3_fgm, corner_3_fga, corner_3_fg_pct,
+                  above_the_break_3_fgm, above_the_break_3_fga, above_the_break_3_fg_pct,
+                  team_abbreviation]
+    limits: Column names are lowercase in this table.
+
+  team_shot_zones:
+    entity: team
+    grain: one row per team per season per per_mode
+    name_column: team_name
+    slices: [season, season_type, per_mode]
+    covers: Team shooting by court zone (same zone layout as player_shot_zones).
+    key_columns: [restricted_area_fg_pct, in_the_paint_nonra_fg_pct, midrange_fg_pct,
+                  corner_3_fg_pct, above_the_break_3_fg_pct]
+    limits: Column names are lowercase in this table.
+
+  player_tracking:
+    entity: player
+    grain: one row per player per season per pt_measure_type per per_mode
+    name_column: PLAYER_NAME
+    slices: [season, season_type, pt_measure_type, per_mode]
+    covers: >-
+      Second-spectrum style tracking. Which columns are populated depends
+      entirely on pt_measure_type, so pick the slice that matches the question.
+    pt_measure_type_guide:
+      Defense: "DEF_RIM_FGM, DEF_RIM_FGA, DEF_RIM_FG_PCT (rim protection), STL, BLK, DREB"
+      Drives: "DRIVES, DRIVE_FG_PCT, DRIVE_PTS, DRIVE_AST, DRIVE_TOV"
+      Passing: "PASSES_MADE, POTENTIAL_AST, AST_POINTS_CREATED, SECONDARY_AST, AST_ADJ"
+      Rebounding: "OREB_CONTEST, DREB_CONTEST, REB_CONTEST_PCT, REB_CHANCES, AVG_REB_DIST"
+      CatchShoot: "CATCH_SHOOT_FG3_PCT, CATCH_SHOOT_PTS, CATCH_SHOOT_EFG_PCT"
+      PullUpShot: "PULL_UP_FG_PCT, PULL_UP_FG3_PCT, PULL_UP_PTS, PULL_UP_EFG_PCT"
+      PaintTouch: "PAINT_TOUCHES, PAINT_TOUCH_FG_PCT, PAINT_TOUCH_PTS, PAINT_TOUCH_AST"
+      PostTouch: "POST_TOUCHES, POST_TOUCH_FG_PCT, POST_TOUCH_PTS"
+      ElbowTouch: "ELBOW_TOUCHES, ELBOW_TOUCH_FG_PCT, ELBOW_TOUCH_PTS"
+      Possessions: "TOUCHES, TIME_OF_POSS, AVG_SEC_PER_TOUCH, PTS_PER_TOUCH, FRONT_CT_TOUCHES"
+      SpeedDistance: "DIST_MILES, DIST_MILES_OFF, DIST_MILES_DEF, AVG_SPEED"
+    limits: >-
+      Tracking data only exists for recent seasons (roughly 2013-14 onward).
+      Columns outside the chosen pt_measure_type will be null.
+
+  team_tracking:
+    entity: team
+    grain: one row per team per season per pt_measure_type per per_mode
+    name_column: TEAM_NAME
+    slices: [season, season_type, pt_measure_type, per_mode]
+    covers: Team version of player_tracking, same pt_measure_type guide.
+    limits: Recent seasons only. Also supports pt_measure_type Efficiency.
+
+  lineups:
+    entity: team
+    grain: one row per 5-man lineup per season per measure_type per per_mode
+    name_column: GROUP_NAME
+    slices: [season, season_type, group_quantity, measure_type, per_mode]
+    covers: >-
+      Five-man lineup units. This is the only table with the full classic
+      advanced set: OFF_RATING, DEF_RATING, NET_RATING, TS_PCT, EFG_PCT, PACE,
+      PIE, four factors and opponent splits.
+    key_columns: [GROUP_ID, TEAM_ABBREVIATION, GP, W, L, W_PCT, MIN,
+                  OFF_RATING, DEF_RATING, NET_RATING, TS_PCT, EFG_PCT, PACE, PIE,
+                  AST_PCT, AST_TO, OREB_PCT, DREB_PCT, REB_PCT, TM_TOV_PCT]
+    measure_types: [Base, Advanced, Misc, Scoring, Opponent, Four Factors]
+    limits: group_quantity is always 5. Rows are lineups, not individual players.
+
+  court_shots:
+    entity: player
+    grain: one row per player per season per shot zone
+    name_column: null
+    slices: [season, season_type]
+    covers: Shot chart zone grid — SHOT_ZONE_BASIC, SHOT_ZONE_AREA, SHOT_ZONE_RANGE, FGA, FGM, FG_PCT.
+    limits: >-
+      Has player_id but NO player name column, so it cannot be filtered by a
+      player's name. Only usable when the question is league-wide by zone.
+      Prefer player_shot_zones for named players.
+
+  player_career:
+    entity: player
+    grain: mixed career datasets per player
+    name_column: null
+    slices: []
+    covers: Career totals and per-season career rows keyed by SEASON_ID, plus college and rankings.
+    limits: >-
+      No player name column and no season/season_type/per_mode slice columns
+      (it uses SEASON_ID instead). Only routable when a player_id is already
+      known. Prefer player_season_stats for career-spanning questions by name.
+
+  player_game_advanced:
+    entity: player
+    grain: one row per player per game
+    name_column: null
+    slices: []
+    covers: >-
+      Game-level advanced metrics — offensiveRating, defensiveRating, netRating,
+      trueShootingPercentage, effectiveFieldGoalPercentage, usagePercentage, PIE,
+      pace, possessions — plus hustle_* columns. Names are camelCase.
+    limits: >-
+      Keyed only by game_id with personId/firstName/familyName. No season column
+      and no single full-name column, so it cannot be filtered by season or by
+      player name without a join. Treat as unavailable for normal questions.
+
+  team_game_advanced:
+    entity: team
+    grain: one row per team per game
+    name_column: teamName
+    slices: []
+    covers: Game-level team advanced metrics and hustle, camelCase names.
+    limits: Keyed by game_id with no season column. Cannot filter by season without a join.
+
+  game_context:
+    entity: game
+    grain: one row per game per dataset slice
+    name_column: null
+    slices: []
+    covers: Game metadata — arena, attendance, period scores, lead changes, paint points, bench points.
+    limits: Keyed by game_id with no season column. Rarely routable on its own.
+
+# Applied when the router leaves a field null.
+defaults:
+  season_type: Regular Season
+  per_mode: PerGame
+
+# Question shapes that need two or more of the tables above at once.
+# These are rejected at Call 1 while multi-table analysis is still in progress.
+unsupported_shapes:
+  - "Box-score stats combined with tracking data (e.g. blocks plus rim field goal percentage allowed)"
+  - "Season averages combined with standings or team record context"
+  - "Player stats combined with lineup or on/off data"
+  - "Anything requiring game-level advanced metrics filtered by season"
+  - "Any question that would need a join, union, or two different tables to answer"

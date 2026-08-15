@@ -26,51 +26,53 @@ const pages: { id: NavPage; icon: typeof MessageSquare; label: string }[] = [
 export function NavRail({ active, onNavigate }: NavRailProps) {
   return (
     <nav
-      className="flex h-full min-w-0 flex-col items-center border-r border-ds-border bg-ds-panel py-3"
+      className="flex h-full min-w-0 flex-col items-center bg-ds-nav-bg py-5"
       aria-label="Main navigation"
     >
-      <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-ds-accent/15 text-sm font-bold text-ds-accent">
+      <div className="mb-6 flex h-8 w-8 items-center justify-center rounded-md border border-ds-nav-icon-active font-heading text-sm font-semibold text-ds-nav-icon-active">
         DS
       </div>
-      <div className="flex flex-1 flex-col gap-1">
+      <div className="flex flex-1 flex-col gap-1.5">
         {pages.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
             type="button"
             title={label}
             onClick={() => onNavigate(id)}
-            className={`flex h-10 w-10 items-center justify-center rounded-lg transition ${
+            className={`flex h-10 w-10 items-center justify-center rounded-md transition ${
               active === id
-                ? "bg-ds-accent/20 text-ds-accent"
-                : "text-ds-muted hover:bg-ds-raised hover:text-ds-text"
+                ? "bg-ds-nav-icon-active-bg text-ds-nav-icon-active"
+                : "text-ds-nav-icon hover:text-ds-nav-icon-active"
             }`}
           >
-            <Icon className="h-5 w-5" strokeWidth={1.75} />
+            <Icon className="h-[19px] w-[19px]" strokeWidth={1.75} />
           </button>
         ))}
         <button
           type="button"
           title="Charts (coming soon)"
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-ds-muted/50"
+          className="flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-md text-ds-nav-icon-muted"
           disabled
         >
-          <BarChart3 className="h-5 w-5" strokeWidth={1.75} />
+          <BarChart3 className="h-[19px] w-[19px]" strokeWidth={1.75} />
         </button>
       </div>
-      <div className="mt-auto flex flex-col gap-1 border-t border-ds-border pt-3">
+      <div className="mt-auto flex flex-col gap-1.5 border-t border-ds-nav-border pt-3">
         <button
           type="button"
-          title="Account"
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-ds-muted hover:bg-ds-raised hover:text-ds-text"
+          title="Account (coming soon)"
+          className="flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-md text-ds-nav-icon-muted"
+          disabled
         >
-          <User className="h-5 w-5" strokeWidth={1.75} />
+          <User className="h-[19px] w-[19px]" strokeWidth={1.75} />
         </button>
         <button
           type="button"
-          title="Settings"
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-ds-muted hover:bg-ds-raised hover:text-ds-text"
+          title="Settings (coming soon)"
+          className="flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-md text-ds-nav-icon-muted"
+          disabled
         >
-          <Settings className="h-5 w-5" strokeWidth={1.75} />
+          <Settings className="h-[19px] w-[19px]" strokeWidth={1.75} />
         </button>
       </div>
     </nav>

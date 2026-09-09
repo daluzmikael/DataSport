@@ -50,6 +50,25 @@ def default_staging_dir() -> Path:
     return (backend_root / "data" / "staging").resolve()
 
 
+_REMOTE_SCHEMES = ("s3://", "r2://", "gs://", "gcs://", "http://", "https://")
+
+
+def staging_uri() -> str:
+    """Base location of the staging parquet files: a local directory or a remote prefix.
+
+    STAGING_DATA_URI wins when set (e.g. r2://datasport-vault/staging). Otherwise the
+    local directory from STAGING_DATA_DIR / backend/data/staging is used.
+    """
+    raw = os.getenv("STAGING_DATA_URI", "").strip()
+    if raw:
+        return raw.rstrip("/")
+    return str(default_staging_dir())
+
+
+def is_remote_staging() -> bool:
+    return staging_uri().startswith(_REMOTE_SCHEMES)
+
+
 def _parquet_path(staging_dir: Path, stem: str) -> Path:
     return staging_dir / f"{stem}.parquet"
 
@@ -58,33 +77,95 @@ def _escape_path(path: Path) -> str:
     return str(path).replace("\\", "/")
 
 
+def _parquet_uri(stem: str) -> str:
+    """Remote URI for one staging table."""
+    return f"{staging_uri()}/{stem}.parquet"
+
+
+def _configure_remote_access(conn: duckdb.DuckDBPyConnection) -> None:
+    """Install httpfs and register object-storage credentials from the environment.
+
+    Public HTTPS parquet needs no credentials. Private buckets use a DuckDB secret:
+    R2 (r2:// + R2_ACCOUNT_ID) or any S3-compatible endpoint (s3:// + S3_ENDPOINT).
+    """
+    conn.execute("INSTALL httpfs")
+    conn.execute("LOAD httpfs")
+
+    key_id = os.getenv("S3_ACCESS_KEY_ID", "").strip()
+    secret = os.getenv("S3_SECRET_ACCESS_KEY", "").strip()
+    if not (key_id and secret):
+        logger.info("Remote staging without credentials (public HTTPS access assumed)")
+        return
+
+    account_id = os.getenv("R2_ACCOUNT_ID", "").strip()
+    if account_id:
+        conn.execute(
+            "CREATE OR REPLACE SECRET datasport_staging "
+            "(TYPE R2, KEY_ID ?, SECRET ?, ACCOUNT_ID ?)",
+            [key_id, secret, account_id],
+        )
+        logger.info("Remote staging secret registered (R2 account %s)", account_id)
+        return
+
+    endpoint = os.getenv("S3_ENDPOINT", "").strip()
+    region = os.getenv("S3_REGION", "auto").strip() or "auto"
+    url_style = os.getenv("S3_URL_STYLE", "path").strip() or "path"
+    params = ["TYPE S3", "KEY_ID ?", "SECRET ?", "REGION ?", "URL_STYLE ?"]
+    args = [key_id, secret, region, url_style]
+    if endpoint:
+        params.append("ENDPOINT ?")
+        args.append(endpoint.replace("https://", "").replace("http://", ""))
+    conn.execute(
+        f"CREATE OR REPLACE SECRET datasport_staging ({', '.join(params)})", args
+    )
+    logger.info("Remote staging secret registered (S3 endpoint %s)", endpoint or "aws")
+
+
+def _source_for_view(stem: str) -> str | None:
+    """read_parquet() argument for one table, or None when the file is absent locally.
+
+    Remote sources are not probed here — a missing object surfaces when the view is
+    created, which costs one request instead of an extra existence check per table.
+    """
+    if is_remote_staging():
+        return _parquet_uri(stem)
+    path = _parquet_path(default_staging_dir(), stem)
+    if not path.exists() or path.stat().st_size == 0:
+        return None
+    return _escape_path(path)
+
+
 def get_connection() -> duckdb.DuckDBPyConnection:
     """Return a DuckDB connection with views registered over staging parquet files."""
     global _conn
     if _conn is not None:
         return _conn
 
-    staging_dir = default_staging_dir()
-    if not staging_dir.is_dir():
+    remote = is_remote_staging()
+    location = staging_uri()
+    if not remote and not default_staging_dir().is_dir():
         raise FileNotFoundError(
-            f"Staging directory not found: {staging_dir}. "
-            "Run: python -m ingestion.stage_all --phase 1"
+            f"Staging directory not found: {location}. "
+            "Run: python -m ingestion.stage_all --phase 1, "
+            "or point STAGING_DATA_URI at object storage."
         )
 
     _conn = duckdb.connect(database=":memory:")
+    if remote:
+        _configure_remote_access(_conn)
+
     registered: list[str] = []
     missing: list[str] = []
 
     for stem, view_name in STAGING_VIEWS.items():
-        path = _parquet_path(staging_dir, stem)
-        if not path.exists() or path.stat().st_size == 0:
+        source = _source_for_view(stem)
+        if source is None:
             missing.append(stem)
             continue
-        sql_path = _escape_path(path)
         try:
             _conn.execute(
                 f"CREATE OR REPLACE VIEW {view_name} AS "
-                f"SELECT * FROM read_parquet('{sql_path}')"
+                f"SELECT * FROM read_parquet('{source}')"
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Staging view skipped (%s): %s", stem, exc)
@@ -93,8 +174,16 @@ def get_connection() -> duckdb.DuckDBPyConnection:
         registered.append(view_name)
 
     if not registered:
+        # Drop the half-built connection so a later call retries. Otherwise a
+        # transient network failure against remote staging would be cached as a
+        # view-less connection for the life of the process.
+        try:
+            _conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+        _conn = None
         raise FileNotFoundError(
-            f"No staging parquet files found in {staging_dir}. "
+            f"No staging parquet files found at {location}. "
             f"Expected at least one of: {', '.join(STAGING_VIEWS)}"
         )
 
@@ -102,8 +191,9 @@ def get_connection() -> duckdb.DuckDBPyConnection:
         logger.warning("Staging views skipped (file missing): %s", ", ".join(missing))
 
     logger.info(
-        "DuckDB staging ready | dir=%s | views=%s",
-        staging_dir,
+        "DuckDB staging ready | source=%s | remote=%s | views=%s",
+        location,
+        remote,
         ", ".join(registered),
     )
     return _conn
@@ -159,7 +249,7 @@ def get_db_schema(conn: duckdb.DuckDBPyConnection | None = None) -> str:
     tables = list_registered_tables(conn)
     parts: list[str] = [
         "=== DuckDB staging database (Parquet-backed views) ===",
-        f"Staging directory: {default_staging_dir()}",
+        f"Staging source: {staging_uri()}",
         "",
         "Slice columns on every table (when present):",
         "  season       — e.g. '2024-25' (career rows use 'CAREER' when available)",

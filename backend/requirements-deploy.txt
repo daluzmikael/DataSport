@@ -1,0 +1,32 @@
+# Runtime dependencies for the deployed API (Render).
+#
+# Deliberately smaller than requirements.txt: ingestion and test-only packages are
+# excluded because data is pulled and staged on a workstation, not on the server.
+#
+# Omitted on purpose:
+#   nba-api        - ingestion only (pull_all / stage_all run locally)
+#   firebase-admin - unused; auth goes through pyrebase's REST client
+#   flask, flask-cors - superseded by FastAPI
+#   pytest         - test-only
+
+fastapi
+uvicorn
+pydantic
+python-dotenv
+requests
+
+# Data layer
+duckdb
+pandas
+numpy
+pyarrow
+sqlglot
+psycopg2-binary  # imported at module load by DashboardBackend and Executer.query_bot
+
+# LLM providers
+openai
+anthropic
+pyyaml
+
+# Auth + saved chat history
+pyrebase4

@@ -1,0 +1,63 @@
+# Render blueprint for the DataSport API.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo/branch.
+# Secrets are marked sync:false and are entered in the Render dashboard, never here.
+services:
+  - type: web
+    name: datasport-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    # Baking the httpfs extension into the build means a cold start does not have to
+    # download it before the first query against object storage.
+    buildCommand: >-
+      pip install --upgrade pip &&
+      pip install -r requirements-deploy.txt &&
+      python -c "import duckdb; duckdb.connect().execute('INSTALL httpfs')"
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.4"
+
+      # --- Data layer -------------------------------------------------------
+      - key: DATA_BACKEND
+        value: duckdb
+      # Object-storage prefix holding the staged parquet, e.g.
+      #   r2://datasport-vault/staging
+      - key: STAGING_DATA_URI
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+
+      # --- Frontend origins -------------------------------------------------
+      # Comma-separated. Set to the Vercel production domain once it exists.
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+
+      # --- LLM --------------------------------------------------------------
+      - key: INTERPRETER_PIPELINE
+        value: router
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ROUTER_PROVIDER
+        value: openai
+      - key: ROUTER_MODEL
+        value: gpt-5.4-mini
+      - key: ANALYST_PROVIDER
+        value: openai
+      - key: ANALYST_MODEL
+        value: gpt-5.4-mini
+
+      # --- Auth -------------------------------------------------------------
+      - key: FIREBASE_API_KEY
+        sync: false
+
+      # --- Logging ----------------------------------------------------------
+      - key: LOG_LEVEL
+        value: INFO

@@ -10,7 +10,12 @@ from fastapi import APIRouter, HTTPException, Query
 
 from Analyzer.player_composite import player_impact_label
 from Executer.data_backend import get_connection, use_duckdb_staging
-from Executer.duckdb_store import default_staging_dir, list_registered_tables, refresh_views
+from Executer.duckdb_store import (
+    is_remote_staging,
+    list_registered_tables,
+    refresh_views,
+    staging_uri,
+)
 from Executer.executor import execute_query, validate_and_normalize_sql
 
 router = APIRouter(prefix="/api/staging", tags=["staging"])
@@ -188,7 +193,8 @@ def staging_health() -> dict[str, Any]:
     tables = list_registered_tables(get_connection())
     return {
         "success": True,
-        "staging_dir": str(default_staging_dir()),
+        "staging_source": staging_uri(),
+        "remote": is_remote_staging(),
         "tables": tables,
     }
 

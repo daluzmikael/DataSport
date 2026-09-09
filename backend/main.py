@@ -58,9 +58,32 @@ context_client = (
 async def root():
     return {"status": "ok", "message": "API is running"}
 
+
+@app.get("/healthz")
+async def healthz():
+    """Liveness probe for the host platform. Deliberately does not touch DuckDB or
+    the LLM providers, so a cold or misconfigured data layer still reports healthy
+    and the platform does not restart-loop the service."""
+    return {"status": "ok"}
+
+def _cors_origins() -> List[str]:
+    """Allowed browser origins, comma-separated in CORS_ALLOW_ORIGINS.
+
+    Defaults to "*" so local development and the Vite/Next dev servers keep working
+    without configuration; production sets the deployed frontend origins explicitly.
+    """
+    raw = (os.getenv("CORS_ALLOW_ORIGINS") or "*").strip()
+    if raw == "*":
+        return ["*"]
+    return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+
+
+_cors_allow_origins = _cors_origins()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_allow_origins,
+    # Auth rides in an Authorization header, not cookies, so credentials stay off.
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

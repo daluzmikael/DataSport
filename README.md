@@ -226,6 +226,20 @@ npm run dev
 
 **Broken venv after moving the repo** — delete `backend/.venv` and recreate it.
 
+## Deployment
+
+Production runs the Next.js analyst app on Vercel, the FastAPI backend on Render,
+and the staged parquet vault in Cloudflare R2 (read remotely by DuckDB over HTTP).
+Ingestion stays on a workstation and pushes staged files to the bucket.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full walkthrough. Start with the size
+check, which decides whether the vault fits in the free tier:
+
+```powershell
+cd DataSport\backend
+python -m scripts.upload_staging --dry-run
+```
+
 ## Further Reading
 
 - `backend/ingestion/README.md` — pull phases, staging, data layout

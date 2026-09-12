@@ -1,5 +1,5 @@
-import type { GameLogRow, GameLogTab } from "../data/playerGameLogMock"
-import type { SeasonBubbleSet } from "../data/playerSeasonAverages"
+import type { GameLogRow, GameLogTab } from "../data/schema/gameLog"
+import type { SeasonBubbleSet } from "../data/schema/seasonBubbles"
 import type { PlayerLive, TeamHistorySeason, TeamRosterPlayer, TeamSeasonGameRow } from "../types"
 
 function num(v: unknown, decimals = 1): string {

@@ -1,5 +1,5 @@
-import type { GameLogTab } from "../data/playerGameLogMock"
-import type { TeamBoxRow } from "../data/teamBoxScoreMock"
+import type { GameLogTab } from "../data/schema/gameLog"
+import type { TeamBoxRow } from "../data/schema/teamBox"
 import type { GameDetailView, LineScore } from "../types"
 import { stagingGameOverlayId } from "../utils/stagingGameId"
 import {

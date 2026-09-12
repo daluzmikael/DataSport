@@ -37,25 +37,7 @@ export function leaderboardFromRows(
     .map((entry, index) => ({ ...entry, rank: index + 1 }))
 }
 
-/** 2022-23 top scorers mock — includes Tatum for profile demos. */
-export function mockScoringLeaderboard(highlightPlayerId?: string): LeaderboardEntry[] {
-  const entries: LeaderboardEntry[] = [
-    { rank: 1, playerId: "203954", playerName: "Joel Embiid", teamAbbr: "PHI", value: 33.1 },
-    { rank: 2, playerId: "1629029", playerName: "Luka Dončić", teamAbbr: "DAL", value: 32.4 },
-    { rank: 3, playerId: "203507", playerName: "Giannis Antetokounmpo", teamAbbr: "MIL", value: 31.1 },
-    { rank: 4, playerId: "201939", playerName: "Stephen Curry", teamAbbr: "GSW", value: 29.4 },
-    { rank: 5, playerId: "203999", playerName: "Nikola Jokić", teamAbbr: "DEN", value: 29.3 },
-    { rank: 6, playerId: "1628369", playerName: "Jayson Tatum", teamAbbr: "BOS", value: 30.1 },
-    { rank: 7, playerId: "201142", playerName: "Kevin Durant", teamAbbr: "PHX", value: 29.7 },
-    { rank: 8, playerId: "1626164", playerName: "Devin Booker", teamAbbr: "PHX", value: 27.8 },
-    { rank: 9, playerId: "2544", playerName: "LeBron James", teamAbbr: "LAL", value: 28.9 },
-    { rank: 10, playerId: "1627759", playerName: "Jaylen Brown", teamAbbr: "BOS", value: 26.6 },
-  ]
-    .sort((a, b) => b.value - a.value)
-    .map((entry, index) => ({ ...entry, rank: index + 1 }))
+/* A hard-coded 2022-23 top-ten used to be the fallback here — with the wrong values,
+ * as it happens: it listed Tatum at 30.1 and Durant at 29.7 for a season where they
+ * averaged 30.1 and 29.1. Leaderboards come from `/api/staging/league/leaders` now. */
 
-  if (!highlightPlayerId) return entries
-  const hasHighlight = entries.some((e) => e.playerId === highlightPlayerId)
-  if (hasHighlight) return entries
-  return entries
-}

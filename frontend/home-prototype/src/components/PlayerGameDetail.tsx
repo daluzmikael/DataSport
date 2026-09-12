@@ -1,7 +1,3 @@
-import { getPlayerLiveGameInsight } from "../data/playerAnalyzerMock"
-
-import { generateMockShots } from "../data/mockShots"
-
 import type { PlayerGameSnapshot } from "../api/mappers"
 
 import type { PlayerLive } from "../types"
@@ -20,9 +16,11 @@ import {
 
 } from "../utils/gameLabels"
 
-import { parseStagingGameId } from "../utils/stagingGameId"
+import { parseStagingGameId, seasonFromGameId } from "../utils/stagingGameId"
 
-import { getGameDetail, LIVE_FEED } from "../data/mock"
+import { useGameShots } from "../hooks/useGameShots"
+
+import { getGameDetail, LIVE_FEED } from "../data/liveState"
 
 import { AnalyzerInsightBlock } from "./AnalyzerInsightBlock"
 
@@ -100,13 +98,7 @@ export function PlayerGameDetail({
 
       : trackedGameTitle(LIVE_FEED, game ?? null, viewPlayer)
 
-
-
-  const mockShots = generateMockShots(player.id)
-
-  const insight = getPlayerLiveGameInsight(player.id, gameId)
-
-
+  const { shots: gameShots } = useGameShots(player.id, gameId, seasonFromGameId(gameId))
 
   return (
 
@@ -239,31 +231,23 @@ export function PlayerGameDetail({
 
 
       <AnalyzerInsightBlock
-
         title={isHistorical ? "Game read" : "Live game read"}
-
-        badge={isHistorical ? "Example · AI game summary" : "Example · AI live summary"}
-
+        question={`How did ${viewPlayer.name} play in ${title}? Use the game log.`}
         onAsk={onAsk}
-
-      >
-
-        {insight}
-
-      </AnalyzerInsightBlock>
+      />
 
 
 
       <section className="rounded-xl border border-ds-border bg-ds-panel p-4">
 
         <ShotChartCourt
-
-          shots={mockShots}
-
+          shots={gameShots}
           playerName={viewPlayer.name}
-
-          subtitle={`${title} · ${status.metaLine} · Shot frequency`}
-
+          subtitle={
+            gameShots.length
+              ? `${title} · ${gameShots.length} shots`
+              : `${title} · no shot coordinates for this game`
+          }
         />
 
       </section>

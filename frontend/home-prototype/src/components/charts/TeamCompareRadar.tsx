@@ -1,5 +1,5 @@
-import type { RadarCategory } from "../../data/teamGameChartsMock"
-import { teamChartColor } from "../../data/teamGameChartsMock"
+import type { RadarCategory } from "../../data/schema/charts"
+import { teamChartColor } from "../../data/schema/charts"
 
 const SIZE = 280
 const CX = SIZE / 2

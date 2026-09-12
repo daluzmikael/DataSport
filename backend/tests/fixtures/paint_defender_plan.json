@@ -1,0 +1,39 @@
+{
+  "entity_type": "player",
+  "entities": ["Gobert", "Adebayo"],
+  "season": "2023-24",
+  "season_type": "Regular Season",
+  "categories": ["defense", "hustle", "paint_rim"],
+  "table_requests": [
+    {
+      "table": "player_season_stats",
+      "measure_type": "Base",
+      "pt_measure_type": null,
+      "per_modes": ["PerGame", "Totals"],
+      "group_quantity": null
+    },
+    {
+      "table": "player_season_stats",
+      "measure_type": "Defense",
+      "pt_measure_type": null,
+      "per_modes": ["PerGame"],
+      "group_quantity": null
+    },
+    {
+      "table": "player_tracking",
+      "measure_type": null,
+      "pt_measure_type": "Defense",
+      "per_modes": ["PerGame"],
+      "group_quantity": null
+    },
+    {
+      "table": "player_tracking",
+      "measure_type": null,
+      "pt_measure_type": "PaintTouch",
+      "per_modes": ["PerGame"],
+      "group_quantity": null
+    }
+  ],
+  "order_by": null,
+  "limit": null
+}

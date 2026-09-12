@@ -1,110 +1,121 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+/** Shot charts, from real shot coordinates.
+ *
+ * What this replaced, in order of how wrong it was:
+ *
+ *  1. Charts were enabled for a hard-coded allow-list of one player (Tatum). Everyone
+ *     else got `generateMockShots()` — a seeded random spray with no relationship to
+ *     anything that happened.
+ *  2. Even for Tatum the dots were synthetic: real per-zone FGA/FG% totals, then
+ *     random placement inside each zone.
+ *
+ * `player_shot_chart` holds 6.3M real attempts (1996-97 → 2025-26), so every player
+ * now gets their own shots, at the coordinates they were actually taken from. When a
+ * season has no rows the hook returns an empty array and the chart says so.
+ */
+import { useEffect, useRef, useState } from "react"
+
 import { USE_STAGING_API } from "../api/config"
-import { mergeShotZoneRows, shotsFromShotZoneRow } from "../api/playerShotChartData"
 import { resolveNbaPlayerId } from "../api/nbaIds"
 import {
-  fetchPlayerGameLogSeasons,
-  fetchPlayerShotZones,
+  fetchPlayerShotChart,
+  fetchPlayerShotChartSeasons,
+  type ShotChartMeta,
 } from "../api/stagingClient"
-import { generateMockShots, type MockShot } from "../data/mockShots"
-import { CAREER_LOG_VALUE, usePlayerGameLogSeasons } from "./useStagingPlayer"
+import { shotFromVaultRow, type ShotPoint } from "../data/schema/shots"
+import { CAREER_LOG_VALUE } from "../data/schema/gameLog"
 
-/** Vault shot charts enabled for Tatum first; expand once validated. */
-const VAULT_SHOT_CHART_PLAYER_IDS = new Set([
-  "player-tatum",
-  "1628369",
-  "nba-1628369",
-])
-
-function vaultShotChartsEnabled(playerId: string, nbaId: string | null): boolean {
-  if (!nbaId) return false
-  return VAULT_SHOT_CHART_PLAYER_IDS.has(playerId) || VAULT_SHOT_CHART_PLAYER_IDS.has(nbaId)
-}
-
+/** Seasons this player has coordinate shot data for, newest first. */
 export function usePlayerShotChartSeasons(playerId: string) {
-  const { seasons, defaultSeason, seasonsLoading, seasonsReady } =
-    usePlayerGameLogSeasons(playerId)
-  const latestSeason = seasons[0] ?? defaultSeason
-  const [season, setSeason] = useState(latestSeason)
+  const nbaId = resolveNbaPlayerId(playerId)
+  const [seasons, setSeasons] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [season, setSeason] = useState<string>("")
   const activePlayer = useRef(playerId)
 
   useEffect(() => {
-    if (!seasonsReady) return
-    if (activePlayer.current !== playerId) {
-      activePlayer.current = playerId
-      setSeason(latestSeason)
+    if (!nbaId || !USE_STAGING_API) {
+      setSeasons([])
+      setSeason("")
       return
     }
-    if (!seasons.includes(season) && season !== CAREER_LOG_VALUE) {
-      setSeason(latestSeason)
+    let cancelled = false
+    setLoading(true)
+    ;(async () => {
+      const rows = await fetchPlayerShotChartSeasons(nbaId)
+      if (cancelled) return
+      const list = rows?.map((r) => r.season) ?? []
+      setSeasons(list)
+      setLoading(false)
+      if (activePlayer.current !== playerId || !list.includes(season)) {
+        activePlayer.current = playerId
+        setSeason(list[0] ?? "")
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [playerId, seasonsReady, seasons, latestSeason, season])
+    // `season` is intentionally omitted: it is set from inside this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nbaId, playerId])
 
   return {
     seasons,
     season,
     setSeason,
-    loading: seasonsLoading,
+    loading,
     isCareer: season === CAREER_LOG_VALUE,
   }
 }
 
+/** Shots for one player-season. Career pulls every season this player has. */
 export function useStagingPlayerShotCharts(playerId: string, season: string) {
   const nbaId = resolveNbaPlayerId(playerId)
-  const vaultEnabled = vaultShotChartsEnabled(playerId, nbaId)
-  const [vaultShots, setVaultShots] = useState<MockShot[] | null>(null)
+  const [shots, setShots] = useState<ShotPoint[]>([])
+  const [meta, setMeta] = useState<ShotChartMeta>({})
   const [fromApi, setFromApi] = useState(false)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!USE_STAGING_API || !nbaId || !vaultEnabled || !season) {
-      setVaultShots(null)
+    if (!USE_STAGING_API || !nbaId || !season) {
+      setShots([])
+      setMeta({})
       setFromApi(false)
       setLoading(false)
       return
     }
     let cancelled = false
     setLoading(true)
-    setVaultShots(null)
+    setShots([])
     setFromApi(false)
+
     ;(async () => {
-      let row: Record<string, unknown> | null = null
+      let rows: Record<string, unknown>[] = []
 
       if (season === CAREER_LOG_VALUE) {
-        const seasons = (await fetchPlayerGameLogSeasons(nbaId)) ?? []
-        const rows = await Promise.all(
-          seasons.map((s) => fetchPlayerShotZones(nbaId, s, "Regular Season", "Totals")),
+        const seasonRows = (await fetchPlayerShotChartSeasons(nbaId)) ?? []
+        const payloads = await Promise.all(
+          seasonRows.map((r) => fetchPlayerShotChart(nbaId, r.season)),
         )
-        const valid = rows.filter((r): r is Record<string, unknown> => Boolean(r))
-        row = valid.length ? mergeShotZoneRows(valid) : null
+        rows = payloads.flatMap((p) => p?.rows ?? [])
       } else {
-        row = await fetchPlayerShotZones(nbaId, season, "Regular Season", "Totals")
+        const payload = await fetchPlayerShotChart(nbaId, season)
+        rows = payload?.rows ?? []
+        if (payload) setMeta(payload.meta)
       }
 
       if (cancelled) return
-      if (!row) {
-        setVaultShots(null)
-        setFromApi(false)
-        setLoading(false)
-        return
-      }
-      const seed = season === CAREER_LOG_VALUE ? `${nbaId}-career` : `${nbaId}-${season}`
-      const shots = shotsFromShotZoneRow(row, seed)
-      setVaultShots(shots.length > 0 ? shots : null)
-      setFromApi(shots.length > 0)
+      const points = rows
+        .map(shotFromVaultRow)
+        .filter((s): s is ShotPoint => s !== null)
+      setShots(points)
+      setFromApi(points.length > 0)
       setLoading(false)
     })()
+
     return () => {
       cancelled = true
     }
-  }, [nbaId, season, vaultEnabled])
+  }, [nbaId, season])
 
-  const mockShots = useMemo(() => generateMockShots(playerId), [playerId])
-
-  return {
-    shots: fromApi && vaultShots ? vaultShots : mockShots,
-    fromApi,
-    loading,
-    vaultEnabled,
-  }
+  return { shots, meta, fromApi, loading, vaultEnabled: Boolean(nbaId) }
 }

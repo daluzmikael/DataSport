@@ -1,10 +1,8 @@
 import { X } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
-import type { GameLogTab } from "../data/teamBoxScoreMock"
-import { getGameDetail, LIVE_FEED } from "../data/mock"
-import { getTeamProfile } from "../data/teamProfileMock"
-import { teamProfileIdFromAbbr } from "../data/liveDashboardFeed"
-import { PLAY_BY_PLAY } from "../data/otherLiveGamesMock"
+import type { GameLogTab } from "../data/schema/teamBox"
+import { getGameDetail, LIVE_FEED } from "../data/liveState"
+import { teamProfileIdFromAbbr, useTeamProfile } from "../data/teamDirectory"
 import type { DetailTarget, GameDetailView } from "../types"
 import { TeamDetail } from "./TeamDetail"
 import { TeamGameChartsSection } from "./charts/TeamGameChartsSection"
@@ -101,10 +99,18 @@ export function DetailOverlay({
   const stagingGameNbaId = gameTargetEarly ? parseStagingGameId(gameTargetEarly.id) : null
   const {
     summary: stagingGameSummary,
+    players: stagingGamePlayers,
+    teamTotals: stagingGameTeamTotals,
     boxForTeam,
     teamStats,
     fromApi: stagingGameFromApi,
   } = useStagingGame(stagingGameNbaId)
+
+  // Team identity from the vault directory, not a fixture table.
+  const teamProfile = useTeamProfile(
+    target?.type === "team" ? target.id : null,
+    "",
+  )
 
   if (!target) return null
 
@@ -116,21 +122,14 @@ export function DetailOverlay({
       : null
   const playerGameTarget = target.type === "player-game" ? target : null
   const playerProfileTarget = target.type === "player" ? target : null
-  const teamProfile =
-    target.type === "team" ? getTeamProfile(target.id) ?? null : null
-
   const playerRow =
     resolvedPlayer && resolvedPlayer.kind === "followed-player"
       ? resolvedPlayer
       : gameSnapshot?.player ?? null
   const activeGameId = playerGameTarget?.gameId
 
-  const teamLiveGameId =
-    teamProfile?.abbr === "BOS"
-      ? LIVE_FEED.find((i) => i.id === "game-celtics")
-        ? "game-celtics"
-        : undefined
-      : undefined
+  // No live source, so no team is ever "in a live game" right now.
+  const teamLiveGameId: string | undefined = undefined
 
   const title = trackedGameTitle(LIVE_FEED, gameDetail, playerRow)
   const playerLiveGameId =
@@ -372,20 +371,14 @@ export function DetailOverlay({
             onAsk={focusAskBar}
           />
         )}
-        {gameDetail && (
-          <TeamGameDetail
-            game={gameDetail}
-            onOpenPlayerGame={onOpenPlayerGame}
-            onOpenTeam={onOpenTeam}
-            onReference={onReference}
-          />
-        )}
-        {!gameDetail && stagingGameDetail && stagingGameNbaId && (
+        {stagingGameDetail && stagingGameNbaId && (
           <StagingGameDetail
             game={stagingGameDetail}
             gameOverlayId={stagingGameOverlayId(stagingGameNbaId)}
             boxForTeam={boxForTeam}
             teamStats={teamStats}
+            players={stagingGamePlayers ?? []}
+            teamTotals={stagingGameTeamTotals ?? {}}
             fromApi={stagingGameFromApi}
             onOpenPlayerGame={onOpenPlayerGame}
             onOpenTeam={onOpenTeam}
@@ -446,6 +439,8 @@ function StagingGameDetail({
   gameOverlayId,
   boxForTeam,
   teamStats,
+  players,
+  teamTotals,
   fromApi,
   onOpenPlayerGame,
   onOpenTeam,
@@ -453,8 +448,10 @@ function StagingGameDetail({
 }: {
   game: GameDetailView
   gameOverlayId: string
-  boxForTeam: (abbr: string, tab: GameLogTab) => import("../data/teamBoxScoreMock").TeamBoxRow[]
+  boxForTeam: (abbr: string, tab: GameLogTab) => import("../data/schema/teamBox").TeamBoxRow[]
   teamStats: (abbr: string, tab: GameLogTab) => Record<string, string | number>
+  players: Record<string, unknown>[]
+  teamTotals: Record<string, Record<string, unknown>>
   fromApi: boolean
   onOpenPlayerGame: (playerId: string, gameId: string) => void
   onOpenTeam: (teamId: string) => void
@@ -498,68 +495,21 @@ function StagingGameDetail({
           onReference={onReference}
         />
       </div>
-    </div>
-  )
-}
-
-function TeamGameDetail({
-  game,
-  onOpenPlayerGame,
-  onOpenTeam,
-  onReference,
-}: {
-  game: GameDetailView
-  onOpenPlayerGame: (playerId: string, gameId: string) => void
-  onOpenTeam: (teamId: string) => void
-  onReference: (label: string) => void
-}) {
-  const [statsTab, setStatsTab] = useState<GameLogTab>("general")
-  const playByPlay = PLAY_BY_PLAY[game.id] ?? [
-    "— timeout",
-    "— made 3PT",
-    "— driving layup",
-  ]
-
-  return (
-    <div className="mx-auto max-w-6xl space-y-4">
-      <GameScoreboard
-        game={game}
-        statsTab={statsTab}
-        onStatsTabChange={setStatsTab}
-        onOpenTeam={(abbr) => onOpenTeam(teamProfileIdFromAbbr(abbr))}
-        onReference={onReference}
-      />
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
-        <TeamBoxScoreTable
-          teamAbbr={game.away.abbr}
-          tab={statsTab}
-          onOpenPlayer={(playerId) => onOpenPlayerGame(playerId, game.id)}
-          onReference={onReference}
-        />
-        <TeamBoxScoreTable
-          teamAbbr={game.home.abbr}
-          tab={statsTab}
-          onOpenPlayer={(playerId) => onOpenPlayerGame(playerId, game.id)}
-          onReference={onReference}
-        />
-      </div>
 
       <TeamGameChartsSection
         awayAbbr={game.away.abbr}
         homeAbbr={game.home.abbr}
+        players={players}
+        teamTotals={teamTotals}
       />
 
-      <TeamGameShotChart awayAbbr={game.away.abbr} homeAbbr={game.home.abbr} />
-
-      <section className="rounded-xl border border-ds-border bg-ds-panel p-4">
-        <h3 className="text-sm font-semibold">Play-by-play (placeholder)</h3>
-        <ul className="mt-2 space-y-1 text-sm text-ds-muted">
-          {playByPlay.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-      </section>
+      <TeamGameShotChart
+        awayAbbr={game.away.abbr}
+        homeAbbr={game.home.abbr}
+        gameId={gameOverlayId}
+      />
     </div>
   )
 }
+
 

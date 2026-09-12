@@ -1,14 +1,6 @@
-import { TAB_CONFIG, type GameLogTab } from "../data/playerGameLogMock"
+import { TAB_CONFIG, type GameLogTab } from "../data/schema/gameLog"
 
-import {
-
-  getTeamSeasonAvg,
-
-  getTeamSeasonLabel,
-
-} from "../data/teamBoxScoreMock"
-
-import { getTeamGameStatsByTab, teamGameStatCells } from "../data/teamGameStatsMock"
+import { teamGameStatCells } from "../data/schema/teamGameStats"
 
 
 
@@ -106,11 +98,12 @@ export function TeamLiveGameStats({
 
   const cells = teamGameStatCells(tab)
 
-  const awayValues = awayValuesProp ?? getTeamGameStatsByTab(awayAbbr, tab)
+  // The caller supplies the real team totals from the game box score. There is no
+  // fallback: the module that used to fill this held one imaginary MIA-BOS game and
+  // returned it for every matchup in the league.
+  const awayValues = awayValuesProp ?? {}
 
-  const homeValues = homeValuesProp ?? getTeamGameStatsByTab(homeAbbr, tab)
-
-  const seasonLabel = getTeamSeasonLabel(awayAbbr)
+  const homeValues = homeValuesProp ?? {}
 
   const tabs = tabsProp ?? TABS
 
@@ -126,13 +119,9 @@ export function TeamLiveGameStats({
 
 
 
-  const seasonRows = [
-
-    { abbr: awayAbbr, values: getTeamSeasonAvg(awayAbbr, tab) },
-
-    { abbr: homeAbbr, values: getTeamSeasonAvg(homeAbbr, tab) },
-
-  ]
+  // Season averages alongside the game line need a separate season read; until that
+  // is wired the comparison rows are simply not shown.
+  const seasonRows: { abbr: string; values: Record<string, string | number> }[] = []
 
 
 
@@ -262,13 +251,13 @@ export function TeamLiveGameStats({
 
 
 
-      {!hideSeasonAvg && (
+      {!hideSeasonAvg && seasonRows.length > 0 && (
 
       <div className="overflow-x-auto border-t border-ds-border/50 bg-ds-raised/70 px-3 py-1.5">
 
         <p className="mb-1 text-[9px] uppercase tracking-wide text-ds-muted">
 
-          {seasonLabel} season avg
+          Season avg
 
         </p>
 

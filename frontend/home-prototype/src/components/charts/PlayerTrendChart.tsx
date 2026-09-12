@@ -1,3 +1,4 @@
+import { shortSeason } from "../../api/chartSpec"
 import type { TrendPoint } from "../../api/playerTrendData"
 
 const W = 520
@@ -12,6 +13,10 @@ interface PlayerTrendChartProps {
   playerName: string
   statLabel: string
   highlightSeason?: string
+  /** Off when a caller renders its own title — AnalystChart owns the header in chat. */
+  showHeader?: boolean
+  /** Vault percentages are fractions, so a 3P% trend reads "0.4" under the default. */
+  formatValue?: (value: number) => string
 }
 
 export function PlayerTrendChart({
@@ -19,6 +24,8 @@ export function PlayerTrendChart({
   playerName,
   statLabel,
   highlightSeason,
+  showHeader = true,
+  formatValue = (v: number) => v.toFixed(1),
 }: PlayerTrendChartProps) {
   if (!data.length) {
     return (
@@ -49,12 +56,16 @@ export function PlayerTrendChart({
 
   return (
     <div>
-      <div className="mb-2">
-        <h3 className="text-sm font-semibold text-ds-text">
-          {playerName}: {statLabel}
-        </h3>
-        <p className="text-[10px] text-ds-muted">Regular season · per game · oldest → newest</p>
-      </div>
+      {showHeader && (
+        <div className="mb-2">
+          <h3 className="text-sm font-semibold text-ds-text">
+            {playerName}: {statLabel}
+          </h3>
+          <p className="text-[10px] text-ds-muted">
+            Regular season · per game · oldest → newest
+          </p>
+        </div>
+      )}
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="h-auto w-full max-w-[520px]"
@@ -70,7 +81,7 @@ export function PlayerTrendChart({
                 y1={y}
                 x2={W - PAD.right}
                 y2={y}
-                stroke="rgba(255,255,255,0.08)"
+                stroke="var(--color-ds-border)"
                 strokeWidth={1}
               />
               <text
@@ -78,11 +89,11 @@ export function PlayerTrendChart({
                 y={y}
                 textAnchor="end"
                 dominantBaseline="middle"
-                fill="rgba(255,255,255,0.4)"
+                fill="var(--color-ds-muted)"
                 fontSize={9}
                 fontFamily="DM Sans, sans-serif"
               >
-                {v.toFixed(1)}
+                {formatValue(v)}
               </text>
             </g>
           )
@@ -110,17 +121,17 @@ export function PlayerTrendChart({
                 stroke={highlighted ? LINE_COLOR : "none"}
                 strokeWidth={2}
               />
-              <title>{`${d.season}: ${d.value}`}</title>
+              <title>{`${d.season}: ${formatValue(d.value)}`}</title>
               {(i === 0 || i === data.length - 1 || i % 2 === 0) && (
                 <text
                   x={xAt(i)}
                   y={H - 6}
                   textAnchor="middle"
-                  fill="rgba(255,255,255,0.45)"
+                  fill="var(--color-ds-muted)"
                   fontSize={8}
                   fontFamily="DM Sans, sans-serif"
                 >
-                  {d.season.slice(2, 4)}–{d.season.slice(7, 9)}
+                  {shortSeason(d.season)}
                 </text>
               )}
             </g>

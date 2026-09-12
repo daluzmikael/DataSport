@@ -6,7 +6,7 @@ interface PlayerLiveCardProps {
   onOpen: () => void
 }
 
-import { LIVE_FEED } from "../../data/mock"
+import { LIVE_FEED } from "../../data/liveState"
 import { isPlayerInLiveGame, playerStatusClass, resolvePlayerCardStatus } from "../../utils/gameLabels"
 
 export function PlayerLiveCard({ player, onOpen }: PlayerLiveCardProps) {

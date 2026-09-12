@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import {
   fetchPlayerCareer,
   fetchPlayerGameLogSeasons,
@@ -7,7 +7,6 @@ import {
 } from "../api/stagingClient"
 import { playerProfileFromSeasonStats, stubPlayerForStaging } from "../api/mappers"
 import { USE_STAGING_API } from "../api/config"
-import { getPlayerProfile } from "../data/mock"
 import { resolveNbaPlayerId } from "../api/nbaIds"
 import type { PlayerLive } from "../types"
 
@@ -72,12 +71,10 @@ export function useStagingPlayerProfile(
   playerId: string | null,
   preferredSeason?: string | null,
 ) {
-  const mockProfile = useMemo(
-    () => (playerId ? getPlayerProfile(playerId) : undefined),
-    [playerId],
-  )
+  // Every profile is a vault read now. `getPlayerProfile` returned a fixture for a
+  // handful of ids and short-circuited the API for exactly those players.
   const nbaId = playerId ? resolveNbaPlayerId(playerId) : null
-  const useVault = Boolean(nbaId && USE_STAGING_API && !mockProfile)
+  const useVault = Boolean(nbaId && USE_STAGING_API)
 
   const [vaultProfile, setVaultProfile] = useState<PlayerLive | null>(null)
   const [loading, setLoading] = useState(false)
@@ -105,7 +102,7 @@ export function useStagingPlayerProfile(
     }
   }, [useVault, nbaId, preferredSeason])
 
-  const player = mockProfile ?? vaultProfile
+  const player = vaultProfile
   return {
     player: player ?? null,
     loading: useVault && loading && !player,

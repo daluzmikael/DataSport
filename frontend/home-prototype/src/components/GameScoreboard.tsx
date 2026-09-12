@@ -1,5 +1,5 @@
-import type { GameLogTab } from "../data/teamBoxScoreMock"
-import type { GameDetailView, LineScore, TeamGameLive } from "../types"
+import type { GameLogTab } from "../data/schema/teamBox"
+import type { GameDetailView, LineScore } from "../types"
 import { AskReferenceButton } from "./AskReferenceButton"
 import { TeamLiveGameStats } from "./TeamLiveGameStats"
 

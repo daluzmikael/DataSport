@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { TAB_CONFIG, type GameLogTab } from "../data/playerGameLogMock"
+import { TAB_CONFIG, type GameLogTab } from "../data/schema/gameLog"
 import { useStagingTeamGameLog, useTeamVaultSeason } from "../hooks/useStagingTeam"
 import { teamAbbrsFromGameLabel } from "../utils/analyzerReference"
 import type { TeamProfile } from "../types"
@@ -98,7 +98,7 @@ export function TeamSeasonGameLogTable({
                   }`}
                   style={{ minWidth: col.minWidth }}
                 >
-                  {col.id === "game" ? "Season avg" : (averages[col.id] ?? "—")}
+                  {col.id === "game" ? "Season avg" : (averages?.[col.id] ?? "—")}
                 </td>
               ))}
             </tr>

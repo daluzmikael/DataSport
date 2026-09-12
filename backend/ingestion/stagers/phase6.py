@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from ingestion.config import RAW_TABLE_DIRS, STAGING_ROOT
-from ingestion.stagers._helpers import reorder_slice_context_columns
+from ingestion.stagers._helpers import reorder_slice_context_columns, normalize_team_identity
 from ingestion.config import PT_MEASURE_TYPES
 from ingestion.utils.slice_names import (
     MEASURE_SLUG_TO_API,
@@ -64,6 +64,7 @@ def _stage_tracking(root: Path, out_name: str, entity: str) -> Path:
         context_cols=("season", "season_type", "pt_measure_type", "per_mode"),
     )
     STAGING_ROOT.mkdir(parents=True, exist_ok=True)
+    combined = normalize_team_identity(combined)
     combined.to_parquet(out_path, index=False)
     logger.info("wrote %s (%s rows)", out_path, len(combined))
     return out_path
@@ -107,6 +108,7 @@ def stage_lineups() -> Path:
         context_cols=("season", "season_type", "group_quantity", "measure_type", "per_mode"),
     )
     STAGING_ROOT.mkdir(parents=True, exist_ok=True)
+    combined = normalize_team_identity(combined)
     combined.to_parquet(out_path, index=False)
     logger.info("wrote %s (%s rows)", out_path, len(combined))
     return out_path
@@ -141,6 +143,7 @@ def stage_player_on_off() -> Path:
         context_cols=("season", "season_type", "per_mode", "TEAM_ID"),
     )
     STAGING_ROOT.mkdir(parents=True, exist_ok=True)
+    combined = normalize_team_identity(combined)
     combined.to_parquet(out_path, index=False)
     logger.info("wrote %s (%s rows)", out_path, len(combined))
     return out_path
@@ -171,6 +174,7 @@ def _stage_estimated(root: Path, out_name: str) -> Path:
         context_cols=("season", "season_type"),
     )
     STAGING_ROOT.mkdir(parents=True, exist_ok=True)
+    combined = normalize_team_identity(combined)
     combined.to_parquet(out_path, index=False)
     logger.info("wrote %s (%s rows)", out_path, len(combined))
     return out_path

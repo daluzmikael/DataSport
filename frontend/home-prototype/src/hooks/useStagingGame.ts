@@ -6,8 +6,8 @@ import {
   mapTeamGameTotals,
   type StagingGameSummary,
 } from "../api/gameMappers"
-import type { GameLogTab } from "../data/playerGameLogMock"
-import type { TeamBoxRow } from "../data/teamBoxScoreMock"
+import type { GameLogTab } from "../data/schema/gameLog"
+import type { TeamBoxRow } from "../data/schema/teamBox"
 
 export function useStagingGame(nbaGameId: string | null) {
   const [summary, setSummary] = useState<StagingGameSummary | null>(null)

@@ -10,7 +10,7 @@ import {
 } from "../api/playerSkillProfile"
 import { resolveNbaPlayerId } from "../api/nbaIds"
 import { fetchPlayerCareer, fetchPlayerSeasonStats } from "../api/stagingClient"
-import { CAREER_LOG_VALUE } from "../data/playerGameLogMock"
+import { CAREER_LOG_VALUE } from "../data/schema/gameLog"
 
 const CAREER_REG_TOTALS_DS = "1"
 
@@ -39,27 +39,14 @@ async function fetchCareerAverages(nbaId: string): Promise<Record<string, unknow
   return totals ? careerAverageRow(totals) : null
 }
 
-function mockStatsForPlayer(playerId: string): Record<string, unknown> {
-  const mocks: Record<string, Record<string, unknown>> = {
-    "player-tatum": { PTS: 26.8, AST: 6.0, REB: 8.7, STL: 1.1, BLK: 0.5 },
-    "player-curry": { PTS: 24.5, AST: 6.1, REB: 4.4, STL: 0.9, BLK: 0.4 },
-    "player-lebron": { PTS: 25.0, AST: 7.5, REB: 7.5, STL: 1.2, BLK: 0.6 },
-  }
-  return mocks[playerId] ?? { PTS: 22, AST: 5, REB: 6, STL: 1, BLK: 0.5 }
-}
-
-function mockCareerForPlayer(playerId: string): Record<string, unknown> {
-  const mocks: Record<string, Record<string, unknown>> = {
-    "player-tatum": { PTS: 22.5, AST: 5.3, REB: 7.2, STL: 1.0, BLK: 0.6 },
-    "player-curry": { PTS: 24.7, AST: 6.4, REB: 4.6, STL: 1.5, BLK: 0.2 },
-    "player-lebron": { PTS: 27.0, AST: 7.4, REB: 7.5, STL: 1.5, BLK: 0.7 },
-  }
-  return mocks[playerId] ?? { PTS: 20, AST: 4.5, REB: 5.5, STL: 0.9, BLK: 0.4 }
-}
+/* Two fixture tables used to sit here: hand-typed PTS/AST/REB/STL/BLK for three
+ * players, plus a generic { PTS: 22, AST: 5, REB: 6, STL: 1, BLK: 0.5 } for everyone
+ * else. The radar was drawn from those whenever the API had not answered, so a chart
+ * labelled with a player's name showed a shape that belonged to no one. */
 
 export function useStagingPlayerSkillProfile(
   playerId: string,
-  playerName: string,
+  _playerName: string,
   season: string,
 ) {
   const nbaId = resolveNbaPlayerId(playerId)
@@ -101,17 +88,15 @@ export function useStagingPlayerSkillProfile(
     }
   }, [nbaId, season, isCareerSeason])
 
-  const solo: SkillRadarCategory[] = useMemo(() => {
-    const row =
-      fromApi && seasonRow ? seasonRow : mockStatsForPlayer(playerId)
-    return buildSoloSkillRadar(row)
-  }, [fromApi, seasonRow, playerId])
+  const solo: SkillRadarCategory[] = useMemo(
+    () => (fromApi && seasonRow ? buildSoloSkillRadar(seasonRow) : []),
+    [fromApi, seasonRow],
+  )
 
-  const career: SkillRadarCategory[] = useMemo(() => {
-    const row =
-      fromApi && careerRow ? careerRow : mockCareerForPlayer(playerId)
-    return buildSoloSkillRadar(row)
-  }, [fromApi, careerRow, playerId])
+  const career: SkillRadarCategory[] = useMemo(
+    () => (fromApi && careerRow ? buildSoloSkillRadar(careerRow) : []),
+    [fromApi, careerRow],
+  )
 
   const compare: SkillCompareRow[] = useMemo(
     () =>

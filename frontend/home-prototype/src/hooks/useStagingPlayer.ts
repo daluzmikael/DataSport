@@ -46,23 +46,13 @@ import {
 
   CAREER_LOG_VALUE,
 
-  SEASON_OPTIONS,
-
   type GameLogRow,
 
-  type GameLogTab,
-
-} from "../data/playerGameLogMock"
+} from "../data/schema/gameLog"
 
 import type { PlayerLive } from "../types"
 
-import type { SeasonBubbleSet } from "../data/playerSeasonAverages"
-
-import { getSeasonAverages, getSeasonLogs } from "../data/playerGameLogMock"
-
-import { getCareerLogs } from "../data/playerCareerLogMock"
-
-import { getPlayerSeasonBubbles } from "../data/playerSeasonAverages"
+import type { SeasonBubbleSet } from "../data/schema/seasonBubbles"
 
 
 
@@ -160,11 +150,12 @@ export function usePlayerGameLogSeasons(playerId: string) {
 
 
 
-  const mockSeasons = SEASON_OPTIONS.map((o) => o.value)
-
+  // No fallback list. A hard-coded ["2024-25","2023-24","2022-23"] was shown for every
+  // player the API could not answer for, including players who never played those
+  // seasons — a dropdown of seasons that do not exist.
   const useApi = Boolean(nbaId && USE_STAGING_API && status === "ready" && seasons?.length)
 
-  const resolvedSeasons = useApi ? seasons! : mockSeasons
+  const resolvedSeasons = useApi ? seasons! : []
 
 
 
@@ -178,7 +169,7 @@ export function usePlayerGameLogSeasons(playerId: string) {
 
     fromApi: useApi,
 
-    defaultSeason: resolvedSeasons[0] ?? mockSeasons[0],
+    defaultSeason: resolvedSeasons[0] ?? "",
 
   }
 
@@ -502,16 +493,6 @@ export function useStagingPlayerGameLog(
 
 
 
-  const mockTab = tab as GameLogTab
-
-  const mockRows = isCareer ? getCareerLogs(playerId)[mockTab] : getSeasonLogs(season)[mockTab]
-
-  const mockAverages = getSeasonAverages(season, mockTab)
-
-  const mockBubbles = getPlayerSeasonBubbles(season)
-
-
-
   const statsFromApi = statsStatus === "ready" && seasonStats != null
 
   const tableRowsReady =
@@ -522,19 +503,14 @@ export function useStagingPlayerGameLog(
 
   return {
 
-    rows: useStaging ? (tableRowsReady ? (rows ?? []) : []) : mockRows,
+    // Vault or nothing. Every one of these used to fall back to a fixture when the
+    // API was unavailable, which rendered one player's invented 2024-25 line under
+    // whichever name happened to be open.
+    rows: tableRowsReady ? (rows ?? []) : [],
 
-    averages: useStaging
+    averages: statsFromApi && averages != null ? averages : null,
 
-      ? statsFromApi && averages != null
-
-        ? averages
-
-        : null
-
-      : mockAverages,
-
-    bubbles: useStaging ? bubbles : mockBubbles,
+    bubbles,
 
     bubblesFromApi: statsFromApi,
 
@@ -700,7 +676,7 @@ export function useStagingPlayerCareerTotals(playerId: string) {
 
 /**
  * Standard entry point for PlayerGameLogTable + PlayerStatBubbles.
- * Pass any resolvable player id (`1628369`, `nba-1628369`, or mock alias).
+ * Pass any resolvable player id (`1628369` or `nba-1628369`).
  */
 export function usePlayerGameLogTableState(playerId: string, initialSeason?: string) {
   const [tab, setTab] = useState<PlayerGameLogTab>("general")
@@ -763,7 +739,6 @@ export function usePlayerGameLogTableState(playerId: string, initialSeason?: str
     seasonsFromApi,
     isCareer,
     usesStaging,
-    nbaId,
     latestSeason: seasons[0],
     ...gameLog,
   }

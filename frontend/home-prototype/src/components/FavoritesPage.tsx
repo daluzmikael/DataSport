@@ -1,12 +1,8 @@
 import { Plus, Search, Star, Trash2, Users } from "lucide-react"
 import { useMemo, useState } from "react"
 import { USE_STAGING_API } from "../api/config"
-import {
-  INITIAL_FOLLOWED_PLAYERS,
-  INITIAL_FOLLOWED_TEAMS,
-  SEARCHABLE_PLAYERS,
-  SEARCHABLE_TEAMS,
-} from "../data/favoritesMock"
+import { entryToProfile, useTeamDirectory } from "../data/teamDirectory"
+import { useFollowedPlayers, useFollowedTeams } from "../hooks/useFavorites"
 import { usePlayerVaultSearch } from "../hooks/usePlayerVaultSearch"
 import type { FavoritePlayer, FavoriteTeam } from "../types"
 import { StagingBadge } from "./StagingBadge"
@@ -21,9 +17,10 @@ function matchesQuery(text: string, q: string) {
 }
 
 export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) {
-  const [teams, setTeams] = useState(INITIAL_FOLLOWED_TEAMS)
-  const [players, setPlayers] = useState(INITIAL_FOLLOWED_PLAYERS)
+  const { teams, add: addTeamToList, remove: removeTeam } = useFollowedTeams()
+  const { players, add: addPlayerToList, remove: removePlayer } = useFollowedPlayers()
   const [query, setQuery] = useState("")
+  const directory = useTeamDirectory()
   const { results: vaultPlayers, loading: vaultLoading, fromApi } = usePlayerVaultSearch(query)
 
   const followedTeamIds = useMemo(() => new Set(teams.map((t) => t.id)), [teams])
@@ -32,13 +29,24 @@ export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) 
   const searchResults = useMemo(() => {
     const q = query.trim()
     if (q.length < 2) return { teams: [] as FavoriteTeam[], players: [] as FavoritePlayer[] }
-    const teamHits = SEARCHABLE_TEAMS.filter(
-      (t) =>
-        !followedTeamIds.has(t.id) &&
-        (matchesQuery(t.name, q) ||
-          matchesQuery(t.city, q) ||
-          matchesQuery(t.abbr, q)),
-    ).slice(0, 6)
+    const teamHits: FavoriteTeam[] = (directory ?? [])
+      .map((entry) => {
+        const profile = entryToProfile(entry, "")
+        return {
+          id: profile.id,
+          abbr: profile.abbr,
+          name: profile.name,
+          city: profile.city,
+        }
+      })
+      .filter(
+        (t) =>
+          !followedTeamIds.has(t.id) &&
+          (matchesQuery(t.name, q) ||
+            matchesQuery(t.city, q) ||
+            matchesQuery(t.abbr, q)),
+      )
+      .slice(0, 6)
 
     let playerHits: FavoritePlayer[] = []
     if (USE_STAGING_API && vaultLoading) {
@@ -52,29 +60,23 @@ export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) 
           teamAbbr: p.teamAbbr,
         }))
         .slice(0, 12)
-    } else {
-      playerHits = SEARCHABLE_PLAYERS.filter(
-        (p) =>
-          !followedPlayerIds.has(p.id) &&
-          (matchesQuery(p.name, q) || matchesQuery(p.teamAbbr, q)),
-      ).slice(0, 8)
     }
+    // No fallback list. Search results come from the vault or not at all — a
+    // hand-written roster of eight players was the only thing search could find
+    // whenever the API was slow, and it looked like the whole league.
 
     return { teams: teamHits, players: playerHits }
-  }, [query, followedTeamIds, followedPlayerIds, vaultPlayers, vaultLoading, fromApi])
+  }, [query, followedTeamIds, followedPlayerIds, vaultPlayers, vaultLoading, fromApi, directory])
 
   const addTeam = (team: FavoriteTeam) => {
-    setTeams((prev) => [...prev, team])
+    addTeamToList(team)
     setQuery("")
   }
 
   const addPlayer = (player: FavoritePlayer) => {
-    setPlayers((prev) => [...prev, player])
+    addPlayerToList(player)
     setQuery("")
   }
-
-  const removeTeam = (id: string) => setTeams((prev) => prev.filter((t) => t.id !== id))
-  const removePlayer = (id: string) => setPlayers((prev) => prev.filter((p) => p.id !== id))
 
   const showSearch = query.trim().length >= 2
 

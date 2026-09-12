@@ -1,6 +1,7 @@
 import { History, Send, Sparkles } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import type { ChatMessage } from "../types"
+import { AnalystChart } from "./charts/AnalystChart"
 
 interface AnalyzerPanelProps {
   messages: ChatMessage[]
@@ -13,10 +14,13 @@ interface AnalyzerPanelProps {
   onToggleChats?: () => void
 }
 
+/* Questions the vault can actually answer. The three that used to be here referenced
+ * a live Celtics game and "tonight" — a fixture that no longer exists, so every one of
+ * them returned nothing. */
 const STARTERS = [
-  "In the current Celtics game, who is shooting worst from three on both teams?",
+  "Who led the league in scoring last season?",
   "Which season was Michael Jordan's best 3-point shooting year?",
-  "Compare Tatum's game score tonight to his season average.",
+  "Compare Nikola Jokic and Joel Embiid in 2022-23.",
 ]
 
 export function AnalyzerPanel({
@@ -84,9 +88,9 @@ export function AnalyzerPanel({
                 Assistant
               </p>
               <p className="mt-1 text-sm leading-relaxed text-ds-text">
-                Welcome to DataSport. Ask about any NBA stat — historical seasons, live
-                games, or players you follow. Try referencing the Celtics game on the
-                right, or ask something unrelated like Jordan's best three-point season.
+                Welcome to DataSport. Ask about any NBA stat from 1996-97 to today —
+                seasons, games, players, teams, awards or shot charts. Tap a game on the
+                right for its box score, or start with one of these.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {STARTERS.map((q) => (
@@ -105,31 +109,40 @@ export function AnalyzerPanel({
             </div>
           )}
           {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-            >
+            <div key={m.id}>
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                  m.role === "user"
-                    ? "bg-ds-accent/20 text-ds-text"
-                    : m.pending
-                      ? "border border-ds-border bg-ds-panel text-ds-muted italic"
-                      : "border border-ds-border bg-ds-panel text-ds-text"
-                }`}
+                className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                {m.content.split("\n").map((line, i) => (
-                  <p key={i} className={i > 0 ? "mt-2" : ""}>
-                    {line.split("**").map((part, j) =>
-                      j % 2 === 1 ? (
-                        <strong key={j}>{part}</strong>
-                      ) : (
-                        <span key={j}>{part}</span>
-                      ),
-                    )}
-                  </p>
-                ))}
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                    m.role === "user"
+                      ? "bg-ds-accent/20 text-ds-text"
+                      : m.pending
+                        ? "border border-ds-border bg-ds-panel text-ds-muted italic"
+                        : "border border-ds-border bg-ds-panel text-ds-text"
+                  }`}
+                >
+                  {m.content.split("\n").map((line, i) => (
+                    <p key={i} className={i > 0 ? "mt-2" : ""}>
+                      {line.split("**").map((part, j) =>
+                        j % 2 === 1 ? (
+                          <strong key={j}>{part}</strong>
+                        ) : (
+                          <span key={j}>{part}</span>
+                        ),
+                      )}
+                    </p>
+                  ))}
+                </div>
               </div>
+
+              {/* Charts sit OUTSIDE the 85% bubble so they get the column's full width —
+                  a leaderboard squeezed into a chat bubble is unreadable. */}
+              {m.role === "assistant" && m.charts?.length
+                ? m.charts.map((spec, i) => (
+                    <AnalystChart key={`${m.id}-chart-${i}`} spec={spec} />
+                  ))
+                : null}
             </div>
           ))}
           <div ref={bottomRef} />

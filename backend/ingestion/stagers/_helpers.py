@@ -68,6 +68,113 @@ _ID_COLS = {
 
 
 
+def normalize_team_identity(df: pd.DataFrame) -> pd.DataFrame:
+    """Rewrite team city / nickname / tricode columns to their canonical spelling.
+
+    Applied by every team-aware stager so the vault speaks one language. Without it
+    the same franchise appears as "LA Clippers" in one table, "Los Angeles Clippers"
+    in another, and city "LA" + name "Clippers" in a third — which is why a question
+    about the Lakers could match nothing at all.
+
+    Rules, matching how the columns are actually used:
+      * full-name columns (TEAM_NAME, team_name)  -> "Los Angeles Clippers"
+      * city columns      (TeamCity, teamCity)    -> "Los Angeles"
+      * nickname columns  (TeamName, teamName)    -> "Clippers"
+      * tricode columns   (TEAM_ABBREVIATION, teamTricode) -> "LAC"
+
+    Resolution prefers the row's TEAM_ID **together with its season**, because a
+    franchise keeps its id across a relocation: the Sonics and the Thunder are both
+    1610612760, so resolving on id alone rewrites a 2005-06 "Seattle SuperSonics" row
+    to "Oklahoma City Thunder" and falsifies it. Era ranges in `team_identity` decide
+    which spelling belongs to which season, and any name already recognised as
+    historical is left untouched even when the row carries no season.
+    """
+    from ingestion.team_identity import identity_for_id, identity_for_name
+
+    if df is None or df.empty:
+        return df
+
+    # No season column means a row cannot be placed in a franchise's timeline, and a
+    # franchise keeps its id across relocations. Normalising anyway is how a 2005-06
+    # Sonics row becomes "Oklahoma City Thunder". `identity_for_id` already refuses to
+    # guess for multi-identity ids, but tables like player_career and
+    # player_game_advanced (keyed by SEASON_ID / game_id) have no season at all, so
+    # they are skipped outright — their names stay exactly as pulled.
+    if "season" not in df.columns:
+        logger.debug("no season column — skipping team identity normalization")
+        return df
+
+    id_col = next(
+        (c for c in ("TEAM_ID", "TeamID", "team_id", "teamId") if c in df.columns), None
+    )
+
+    full_cols = [c for c in ("TEAM_NAME", "team_name") if c in df.columns]
+    city_cols = [c for c in ("TEAM_CITY", "TeamCity", "team_city", "teamCity") if c in df.columns]
+    nick_cols = [c for c in ("TeamName", "teamName") if c in df.columns]
+    tri_cols = [
+        c for c in ("TEAM_ABBREVIATION", "team_abbreviation", "teamTricode", "TeamSlug")
+        if c in df.columns and c != "TeamSlug"
+    ]
+
+    if not (full_cols or city_cols or nick_cols or tri_cols):
+        return df
+
+    # Vectorised: build one Series of resolved identities, then assign per column.
+    # A per-row loop is unusable here — game_context is 741k rows and
+    # player_game_advanced is 994k.
+    seasons = df["season"].astype(str)
+
+    ident_series = pd.Series(pd.NA, index=df.index, dtype="object")
+    if id_col is not None:
+        ids = pd.to_numeric(df[id_col], errors="coerce")
+        ident_series = pd.Series(
+            [
+                identity_for_id(i, s) if pd.notna(i) else None
+                for i, s in zip(ids, seasons)
+            ],
+            index=df.index,
+            dtype="object",
+        )
+
+    # Fill gaps from the text columns, where no usable id was present. Season is
+    # passed through so a name lookup is placed in the same timeline as an id lookup.
+    unresolved = ident_series.isna()
+    if unresolved.any():
+        for c in full_cols + nick_cols:
+            if not unresolved.any():
+                break
+            filled = [
+                identity_for_name(n, s)
+                for n, s in zip(df.loc[unresolved, c], seasons[unresolved])
+            ]
+            ident_series.loc[unresolved] = pd.Series(
+                filled, index=df.index[unresolved], dtype="object"
+            )
+            unresolved = ident_series.isna()
+
+    resolved_mask = ident_series.notna()
+    resolved = int(resolved_mask.sum())
+    if not resolved:
+        return df
+
+    # Rows whose id/season pair matched no known era keep the spelling they were
+    # pulled with — the vault's own history is the authority, not this table.
+    def assign(cols: list[str], attr: str) -> None:
+        if not cols:
+            return
+        values = ident_series[resolved_mask].map(lambda t: getattr(t, attr))
+        for c in cols:
+            df.loc[resolved_mask, c] = values
+
+    assign(full_cols, "full_name")
+    assign(city_cols, "city")
+    assign(nick_cols, "nickname")
+    assign(tri_cols, "tricode")
+
+    logger.debug("normalized team identity on %d/%d rows", resolved, len(df))
+    return df
+
+
 def reorder_slice_context_columns(
 
     df: pd.DataFrame,
@@ -76,7 +183,11 @@ def reorder_slice_context_columns(
 
     id_col: str,
 
-    context_cols: tuple[str, ...] = ("season", "season_type", "measure_type", "per_mode"),
+    # Grain context for the wide season tables is season / season_type / per_mode.
+    # `measure_type` is kept in the list only so tables that genuinely carry it
+    # (lineups) still order correctly — the function already filters to columns
+    # actually present, so the season tables simply never show it.
+    context_cols: tuple[str, ...] = ("season", "season_type", "per_mode", "measure_type"),
 
 ) -> pd.DataFrame:
 

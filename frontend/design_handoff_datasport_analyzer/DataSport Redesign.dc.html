@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/classical-390aa52a-0602-45b3-b8e4-1bddd588eae2/styles.css">
+  <script src="_ds/classical-390aa52a-0602-45b3-b8e4-1bddd588eae2/_ds_bundle.js"></script>
+  <style>
+    body { margin: 0; }
+    a { color: var(--color-accent-700); font-weight: 600; }
+    a:hover { color: var(--color-accent); }
+    @keyframes slideInFromBoard { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes slideOutToBoard { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+  </style>
+</helmet>
+
+<div style="display:flex;align-items:flex-start;min-height:100vh;background:var(--color-surface);color:var(--color-text);">
+
+  <nav style="position:sticky;top:0;height:100vh;width:76px;flex-shrink:0;background:var(--color-neutral-900);display:flex;flex-direction:column;align-items:center;padding:20px 0;box-sizing:border-box;">
+    <div style="width:34px;height:34px;border:1px solid var(--color-accent-400);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:600;color:var(--color-accent-400);font-size:14px;margin-bottom:24px;">DS</div>
+    <div style="display:flex;flex-direction:column;gap:6px;">
+      <button type="button" title="Analyzer" style="{{navIconStyle.analyzer}}" onClick="{{goHome}}">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </button>
+      <button type="button" title="Following" style="{{navIconStyle.following}}" onClick="{{goTeam}}">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/></svg>
+      </button>
+      <button type="button" title="Dashboard (soon)" style="{{navIconStyle.dashboard}}" disabled="{{true}}">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+      </button>
+      <button type="button" title="Social (soon)" style="{{navIconStyle.social}}" disabled="{{true}}">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </button>
+    </div>
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:6px;padding-top:16px;border-top:1px solid var(--color-neutral-700);">
+      <button type="button" title="Account" style="{{navIconStyleMuted}}" disabled="{{true}}">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </button>
+      <button type="button" title="Settings" style="{{navIconStyleMuted}}" disabled="{{true}}">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <sc-if value="{{isHomeScreen}}" hint-placeholder-val="{{true}}">
+    <div data-screen-label="Analyzer home" style="flex:1;min-width:0;display:flex;">
+      <div style="flex:1;min-width:0;max-width:760px;margin:0 auto;padding:40px 32px 72px;">
+        <p class="card-kicker" style="font-size:12px;">DataSport · Analyst mode</p>
+        <h1 style="margin:0 0 20px;font-size:48px;">Ask about any stat</h1>
+        <div style="display:flex;gap:10px;margin-bottom:28px;">
+          <input class="input" placeholder="Ask DataSport… e.g. Celtics 3PT shooting tonight" style="flex:1;" />
+          <button type="button" class="btn btn-primary">Ask</button>
+        </div>
+        <div class="card" style="padding:20px;background:var(--color-bg);box-shadow:var(--shadow-sm);">
+          <p class="card-kicker">Assistant</p>
+          <p style="margin:0;font-size:16px;">Welcome to DataSport. Ask about any NBA stat — historical seasons, live games, or players you follow. Try referencing the Celtics game on the right, or ask something unrelated like Jordan's best three-point shooting year.</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;">
+          <span style="display:inline-flex;align-items:center;border:1px solid var(--color-accent);color:var(--color-accent);border-radius:calc(var(--radius-md) * 0.75);padding:5px 10px;font-size:12px;line-height:1.3;">Celtics 3PT shooting tonight</span>
+          <span style="display:inline-flex;align-items:center;border:1px solid var(--color-accent);color:var(--color-accent);border-radius:calc(var(--radius-md) * 0.75);padding:5px 10px;font-size:12px;line-height:1.3;">Jordan best 3PT season</span>
+          <span style="display:inline-flex;align-items:center;border:1px solid var(--color-accent);color:var(--color-accent);border-radius:calc(var(--radius-md) * 0.75);padding:5px 10px;font-size:12px;line-height:1.3;">Tatum vs Brown usage 2024-25</span>
+        </div>
+      </div>
+      <aside style="width:340px;flex-shrink:0;background:var(--color-bg);border-left:1px solid var(--color-divider);padding:24px 20px;">
+        <p class="card-kicker" style="margin:0;">Your live board</p>
+        <h4 style="margin:4px 0 4px;">Live now</h4>
+        <p class="text-muted" style="font-size:12px;margin:0 0 16px;">Teams &amp; players you follow — tap for full stats.</p>
+        <button type="button" onClick="{{goTeam}}" style="display:block;width:100%;text-align:left;background:var(--color-surface);box-shadow:var(--shadow-sm);border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:14px;cursor:pointer;font-family:var(--font-body);color:var(--color-text);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span class="tag tag-accent">Live · Following</span>
+            <span style="font-size:11px;color:var(--color-neutral-600);">Q3 · 5:46</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;font-family:var(--font-heading);">
+            <div><p style="margin:0;font-size:11px;color:var(--color-neutral-600);">Heat</p><p style="margin:0;font-weight:600;">MIA</p></div>
+            <p style="margin:0;font-size:22px;font-weight:600;">82<span style="color:var(--color-neutral-500);"> – </span>87</p>
+            <div style="text-align:right;"><p style="margin:0;font-size:11px;color:var(--color-neutral-600);">Celtics</p><p style="margin:0;font-weight:600;color:var(--color-accent-700);">BOS</p></div>
+          </div>
+          <div class="hr" style="margin:10px 0;"></div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:11px;">
+            <div><p class="card-kicker" style="margin:0;">PTS</p><p style="margin:2px 0 0;">Tatum 24</p><p style="margin:0;color:var(--color-neutral-600);">Brown 19</p></div>
+            <div><p class="card-kicker" style="margin:0;">AST</p><p style="margin:2px 0 0;">White 6</p><p style="margin:0;color:var(--color-neutral-600);">Holiday 5</p></div>
+            <div><p class="card-kicker" style="margin:0;">REB</p><p style="margin:2px 0 0;">Horford 8</p><p style="margin:0;color:var(--color-neutral-600);">Adebayo 7</p></div>
+          </div>
+        </button>
+      </aside>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isTeamScreen}}" hint-placeholder-val="{{false}}">
+    <div data-screen-label="Team profile" style="{{teamScreenStyle}}">
+      <a href="#" onClick="{{goHome}}" style="font-size:13px;">← Analyzer</a>
+
+      <div class="card" style="padding:24px 28px;background:var(--color-bg);box-shadow:var(--shadow-sm);display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start;">
+        <div style="min-width:220px;">
+          <p class="card-kicker">Franchise</p>
+          <h1 style="margin:0;font-size:48px;">{{team.city}} {{team.name}}</h1>
+          <p style="margin:4px 0 0;font-family:var(--font-heading);font-size:20px;color:var(--color-accent-700);">{{team.abbr}} · {{team.season}} season</p>
+        </div>
+        <div style="display:flex;gap:36px;flex-wrap:wrap;">
+          <div>
+            <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-neutral-600);">Standing</p>
+            <p style="margin:4px 0 0;font-family:var(--font-heading);font-weight:600;font-size:22px;">{{team.standing}}</p>
+          </div>
+          <div>
+            <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-neutral-600);">Record</p>
+            <p style="margin:4px 0 0;font-family:var(--font-heading);font-weight:600;font-size:22px;">{{team.record}}</p>
+          </div>
+          <div>
+            <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-neutral-600);">Best player (GS)</p>
+            <p style="margin:4px 0 0;font-family:var(--font-heading);font-weight:600;font-size:19px;">{{team.bestPlayer}}</p>
+            <p style="margin:0;font-size:26px;color:var(--color-accent);font-weight:600;">{{team.bestPlayerGS}}</p>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:0;margin-top:28px;border-bottom:1px solid var(--color-divider);">
+        <button type="button" style="{{tabOverviewStyle}}" onClick="{{showOverview}}">Overview</button>
+        <button type="button" style="{{tabLeadersStyle}}" onClick="{{showLeaders}}">Season Leaders</button>
+        <button type="button" style="{{tabGameLogStyle}}" onClick="{{showGameLog}}">Game Log</button>
+        <button type="button" style="{{tabRosterStyle}}" onClick="{{showRoster}}">Roster</button>
+      </div>
+
+      <sc-if value="{{isOverview}}" hint-placeholder-val="{{true}}">
+        <div style="padding-top:28px;">
+          <h3 style="margin:0 0 12px;">Season leaders</h3>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+            <sc-for list="{{topLeaders}}" as="item" hint-placeholder-count="3">
+              <div class="card" style="background:var(--color-bg);box-shadow:var(--shadow-sm);">
+                <p class="card-kicker">{{item.stat}}</p>
+                <p class="card-title" style="font-size:19px;">{{item.player}}</p>
+                <p style="margin:0;font-family:var(--font-heading);font-size:30px;font-weight:600;color:var(--color-accent);">{{item.value}}</p>
+                <p class="card-meta">Per game · {{team.season}}</p>
+              </div>
+            </sc-for>
+          </div>
+
+          <h3 style="margin:32px 0 12px;">Key stats</h3>
+          <div class="hr" style="margin:0 0 16px;"></div>
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:16px;">
+            <div><p class="card-kicker" style="margin:0;">Record</p><p style="margin:2px 0 0;font-family:var(--font-heading);font-weight:600;font-size:24px;">{{team.avgGeneral.wl}}</p></div>
+            <div><p class="card-kicker" style="margin:0;">PPG</p><p style="margin:2px 0 0;font-family:var(--font-heading);font-weight:600;font-size:24px;">{{team.avgGeneral.pts}}</p></div>
+            <div><p class="card-kicker" style="margin:0;">RPG</p><p style="margin:2px 0 0;font-family:var(--font-heading);font-weight:600;font-size:24px;">{{team.avgGeneral.reb}}</p></div>
+            <div><p class="card-kicker" style="margin:0;">APG</p><p style="margin:2px 0 0;font-family:var(--font-heading);font-weight:600;font-size:24px;">{{team.avgGeneral.ast}}</p></div>
+            <div><p class="card-kicker" style="margin:0;">FG%</p><p style="margin:2px 0 0;font-family:var(--font-heading);font-weight:600;font-size:24px;">{{team.avgGeneral.fg_pct}}</p></div>
+            <div><p class="card-kicker" style="margin:0;">3P%</p><p style="margin:2px 0 0;font-family:var(--font-heading);font-weight:600;font-size:24px;">{{team.avgGeneral.fg3_pct}}</p></div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isLeaders}}" hint-placeholder-val="{{false}}">
+        <div style="padding-top:28px;">
+          <p class="text-muted" style="font-size:12px;margin:0 0 12px;">Season per-game leaders · {{team.season}}</p>
+          <table class="table" style="font-size:15px;">
+            <thead><tr><th>Stat</th><th>Leader</th><th>Value</th></tr></thead>
+            <tbody>
+              <sc-for list="{{teamLeaders}}" as="item" hint-placeholder-count="12">
+                <tr>
+                  <td style="font-family:var(--font-heading);font-weight:600;">{{item.stat}}</td>
+                  <td>
+                    <sc-if value="{{item.isTatum}}" hint-placeholder-val="{{false}}">
+                      <a href="#" onClick="{{goPlayer}}">{{item.player}}</a>
+                    </sc-if>
+                    <sc-if value="{{item.isNotTatum}}" hint-placeholder-val="{{true}}">
+                      <span>{{item.player}}</span>
+                    </sc-if>
+                  </td>
+                  <td style="font-variant-numeric:tabular-nums;">{{item.value}}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isGameLogTab}}" hint-placeholder-val="{{false}}">
+        <div style="padding-top:28px;">
+          <div style="display:flex;gap:8px;margin-bottom:16px;">
+            <button type="button" style="{{teamLogGeneralBtnStyle}}" onClick="{{showTeamGeneral}}">General</button>
+            <button type="button" style="{{teamLogAdvancedBtnStyle}}" onClick="{{showTeamAdvanced}}">Advanced</button>
+          </div>
+
+          <sc-if value="{{isTeamGeneral}}" hint-placeholder-val="{{true}}">
+            <table class="table" style="font-size:15px;">
+              <thead><tr><th>Game</th><th>W/L</th><th>MIN</th><th>PTS</th><th>FG%</th><th>3P%</th><th>REB</th><th>AST</th><th>STL</th><th>+/-</th></tr></thead>
+              <tbody>
+                <tr style="background:color-mix(in srgb, var(--color-accent) 8%, transparent);">
+                  <td style="font-family:var(--font-heading);font-weight:600;color:var(--color-accent-700);">Season avg</td>
+                  <td>{{team.avgGeneral.wl}}</td>
+                  <td>—</td>
+                  <td>{{team.avgGeneral.pts}}</td>
+                  <td>{{team.avgGeneral.fg_pct}}</td>
+                  <td>{{team.avgGeneral.fg3_pct}}</td>
+                  <td>{{team.avgGeneral.reb}}</td>
+                  <td>{{team.avgGeneral.ast}}</td>
+                  <td>{{team.avgGeneral.stl}}</td>
+                  <td>{{team.avgGeneral.pm}}</td>
+                </tr>
+                <sc-for list="{{teamGamesGeneral}}" as="g" hint-placeholder-count="10">
+                  <tr>
+                    <td style="font-family:var(--font-heading);font-weight:600;">{{g.game}}</td>
+                    <td>{{g.wl}}</td>
+                    <td>{{g.min}}</td>
+                    <td>{{g.pts}}</td>
+                    <td>{{g.fg_pct}}</td>
+                    <td>{{g.fg3_pct}}</td>
+                    <td>{{g.reb}}</td>
+                    <td>{{g.ast}}</td>
+                    <td>{{g.stl}}</td>
+                    <td>{{g.pm}}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </sc-if>
+
+          <sc-if value="{{isTeamAdvanced}}" hint-placeholder-val="{{false}}">
+            <table class="table" style="font-size:15px;">
+              <thead><tr><th>Game</th><th>OFF RTG</th><th>DEF RTG</th><th>NET RTG</th><th>TS%</th><th>eFG%</th><th>PACE</th></tr></thead>
+              <tbody>
+                <tr style="background:color-mix(in srgb, var(--color-accent) 8%, transparent);">
+                  <td style="font-family:var(--font-heading);font-weight:600;color:var(--color-accent-700);">Season avg</td>
+                  <td>{{team.avgAdvanced.off_rtg}}</td>
+                  <td>{{team.avgAdvanced.def_rtg}}</td>
+                  <td>{{team.avgAdvanced.net_rtg}}</td>
+                  <td>{{team.avgAdvanced.ts_pct}}</td>
+                  <td>{{team.avgAdvanced.efg_pct}}</td>
+                  <td>{{team.avgAdvanced.pace}}</td>
+                </tr>
+                <sc-for list="{{teamGamesAdvanced}}" as="g" hint-placeholder-count="10">
+                  <tr>
+                    <td style="font-family:var(--font-heading);font-weight:600;">{{g.game}}</td>
+                    <td>{{g.off_rtg}}</td>
+                    <td>{{g.def_rtg}}</td>
+                    <td>{{g.net_rtg}}</td>
+                    <td>{{g.ts_pct}}</td>
+                    <td>{{g.efg_pct}}</td>
+                    <td>{{g.pace}}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isRoster}}" hint-placeholder-val="{{false}}">
+        <div style="padding-top:28px;">
+          <p class="text-muted" style="font-size:12px;margin:0 0 12px;">Current season · {{rosterCount}} players</p>
+          <table class="table" style="font-size:15px;">
+            <thead><tr><th>#</th><th>Name</th><th>Pos</th><th>Ht</th></tr></thead>
+            <tbody>
+              <sc-for list="{{roster}}" as="p" hint-placeholder-count="14">
+                <tr>
+                  <td style="font-variant-numeric:tabular-nums;color:var(--color-neutral-600);">{{p.number}}</td>
+                  <td style="font-family:var(--font-heading);font-weight:600;">
+                    <sc-if value="{{p.isTatum}}" hint-placeholder-val="{{false}}">
+                      <a href="#" onClick="{{goPlayer}}">{{p.name}}</a>
+                    </sc-if>
+                    <sc-if value="{{p.isNotTatum}}" hint-placeholder-val="{{true}}">
+                      <span>{{p.name}}</span>
+                    </sc-if>
+                  </td>
+                  <td>{{p.position}}</td>
+                  <td>{{p.height}}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </sc-if>
+
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isPlayerScreen}}" hint-placeholder-val="{{false}}">
+    <div data-screen-label="Player profile" style="{{playerScreenStyle}}">
+
+      <a href="#" onClick="{{goTeamRoster}}" style="font-size:13px;">← {{team.city}} {{team.name}} roster</a>
+      <span style="margin:0 8px;color:var(--color-divider);">·</span>
+      <a href="#" onClick="{{goHome}}" style="font-size:13px;">← Analyzer</a>
+
+      <div class="card" style="padding:24px 28px;margin-top:16px;background:var(--color-bg);box-shadow:var(--shadow-sm);display:flex;flex-wrap:wrap;gap:32px;align-items:center;justify-content:space-between;">
+        <div>
+          <p class="card-kicker">Player profile</p>
+          <h1 style="margin:0;font-size:48px;">{{player.name}}</h1>
+          <p style="margin:4px 0 0;font-family:var(--font-heading);font-size:18px;color:var(--color-accent-700);">{{player.team}} · {{player.season}} season</p>
+        </div>
+        <div style="text-align:center;padding:8px 20px;border:1px solid var(--color-divider);border-radius:var(--radius-md);">
+          <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--color-neutral-600);">Season GS</p>
+          <p style="margin:4px 0 0;font-family:var(--font-heading);font-weight:600;font-size:30px;color:var(--color-accent);">{{player.seasonGS}}</p>
+          <p style="margin:0;font-size:12px;color:var(--color-neutral-600);">#{{player.gsRank}} of {{player.gsRankTotal}}</p>
+        </div>
+      </div>
+
+      <h3 style="margin:32px 0 12px;">Career accolades</h3>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+        <sc-for list="{{player.accolades}}" as="a" hint-placeholder-count="4">
+          <div class="card" style="background:var(--color-bg);box-shadow:var(--shadow-sm);">
+            <p class="card-kicker">{{a.label}}</p>
+            <p style="margin:0;font-family:var(--font-heading);font-size:28px;font-weight:600;">{{a.value}}</p>
+            <p class="card-meta" style="font-size:12px;">{{a.subline}}</p>
+          </div>
+        </sc-for>
+      </div>
+
+      <h3 style="margin:32px 0 12px;">Game log</h3>
+      <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <button type="button" style="{{playerLogGeneralBtnStyle}}" onClick="{{showPlayerGeneral}}">General</button>
+        <button type="button" style="{{playerLogAdvancedBtnStyle}}" onClick="{{showPlayerAdvanced}}">Advanced</button>
+      </div>
+
+      <sc-if value="{{isPlayerGeneral}}" hint-placeholder-val="{{true}}">
+        <table class="table" style="font-size:15px;">
+          <thead><tr><th>Game</th><th>W/L</th><th>MIN</th><th>PTS</th><th>FG%</th><th>3P%</th><th>REB</th><th>AST</th><th>STL</th><th>+/-</th></tr></thead>
+          <tbody>
+            <tr style="background:color-mix(in srgb, var(--color-accent) 8%, transparent);">
+              <td style="font-family:var(--font-heading);font-weight:600;color:var(--color-accent-700);">Season avg</td>
+              <td>{{player.avgGeneral.wl}}</td>
+              <td>{{player.avgGeneral.min}}</td>
+              <td>{{player.avgGeneral.pts}}</td>
+              <td>{{player.avgGeneral.fg_pct}}</td>
+              <td>{{player.avgGeneral.fg3_pct}}</td>
+              <td>{{player.avgGeneral.reb}}</td>
+              <td>{{player.avgGeneral.ast}}</td>
+              <td>{{player.avgGeneral.stl}}</td>
+              <td>{{player.avgGeneral.pm}}</td>
+            </tr>
+            <sc-for list="{{playerGamesGeneral}}" as="g" hint-placeholder-count="8">
+              <tr>
+                <td style="font-family:var(--font-heading);font-weight:600;">{{g.game}}</td>
+                <td>{{g.wl}}</td>
+                <td>{{g.min}}</td>
+                <td>{{g.pts}}</td>
+                <td>{{g.fg_pct}}</td>
+                <td>{{g.fg3_pct}}</td>
+                <td>{{g.reb}}</td>
+                <td>{{g.ast}}</td>
+                <td>{{g.stl}}</td>
+                <td>{{g.pm}}</td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </sc-if>
+
+      <sc-if value="{{isPlayerAdvanced}}" hint-placeholder-val="{{false}}">
+        <table class="table" style="font-size:15px;">
+          <thead><tr><th>Game</th><th>TS%</th><th>eFG%</th><th>USG%</th><th>PIE</th></tr></thead>
+          <tbody>
+            <tr style="background:color-mix(in srgb, var(--color-accent) 8%, transparent);">
+              <td style="font-family:var(--font-heading);font-weight:600;color:var(--color-accent-700);">Season avg</td>
+              <td>{{player.avgAdvanced.ts_pct}}</td>
+              <td>{{player.avgAdvanced.efg_pct}}</td>
+              <td>{{player.avgAdvanced.usg_pct}}</td>
+              <td>{{player.avgAdvanced.pie}}</td>
+            </tr>
+            <sc-for list="{{playerGamesAdvanced}}" as="g" hint-placeholder-count="8">
+              <tr>
+                <td style="font-family:var(--font-heading);font-weight:600;">{{g.game}}</td>
+                <td>{{g.ts_pct}}</td>
+                <td>{{g.efg_pct}}</td>
+                <td>{{g.usg_pct}}</td>
+                <td>{{g.pie}}</td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </sc-if>
+
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const TEAM = {
+  city: "Boston", name: "Celtics", abbr: "BOS", season: "2024-25",
+  standing: "1st · East", record: "41-17",
+  bestPlayer: "Jayson Tatum", bestPlayerGS: "7.1",
+  avgGeneral: { wl: "41-17", pts: "118.6", fg_pct: ".479", fg3_pct: ".379", reb: "46.0", ast: "26.4", stl: "7.8", pm: "+6.8" },
+  avgAdvanced: { off_rtg: "118.2", def_rtg: "109.8", net_rtg: "+8.4", ts_pct: ".584", efg_pct: ".552", pace: "98.6" },
+};
+
+const TEAM_GAMES_GENERAL = [
+  { id: "live", game: "LIVE vs MIA", wl: "—", min: 240, pts: 87, fg_pct: ".471", fg3_pct: ".346", reb: 41, ast: 25, stl: 8, pm: "+5" },
+  { id: "g1", game: "11/28 vs ORL", wl: "W", min: 240, pts: 124, fg_pct: ".470", fg3_pct: ".370", reb: 44, ast: 26, stl: 8, pm: "+14" },
+  { id: "g2", game: "11/26 @ DET", wl: "W", min: 240, pts: 116, fg_pct: ".470", fg3_pct: ".370", reb: 44, ast: 26, stl: 8, pm: "+9" },
+  { id: "g3", game: "11/24 vs IND", wl: "L", min: 240, pts: 108, fg_pct: ".470", fg3_pct: ".370", reb: 44, ast: 26, stl: 8, pm: "-4" },
+  { id: "g4", game: "11/22 @ MIL", wl: "W", min: 240, pts: 122, fg_pct: ".470", fg3_pct: ".370", reb: 44, ast: 26, stl: 8, pm: "+11" },
+  { id: "g5", game: "11/20 vs BKN", wl: "W", min: 240, pts: 129, fg_pct: ".470", fg3_pct: ".370", reb: 44, ast: 26, stl: 8, pm: "+18" },
+  { id: "g6", game: "11/18 @ PHI", wl: "L", min: 240, pts: 101, fg_pct: ".470", fg3_pct: ".370", reb: 44, ast: 26, stl: 8, pm: "-7" },
+  { id: "g7", game: "11/16 vs NYK", wl: "W", min: 240, pts: 118, fg_pct: ".470", fg3_pct: ".370", reb: 44, ast: 26, stl: 8, pm: "+6" },
+  { id: "g8", game: "11/14 @ MIA", wl: "W", min: 240, pts: 112, fg_pct: ".470", fg3_pct: ".370", reb: 44, ast: 26, stl: 8, pm: "+3" },
+  { id: "g9", game: "11/12 vs CHI", wl: "W", min: 240, pts: 107, fg_pct: ".470", fg3_pct: ".370", reb: 44, ast: 26, stl: 8, pm: "+5" },
+];
+
+const TEAM_ADV_ROW = { off_rtg: "114", def_rtg: "108", net_rtg: "+6", ts_pct: ".568", efg_pct: ".537", pace: "98.2" };
+const TEAM_GAMES_ADVANCED = TEAM_GAMES_GENERAL.map((g) => ({ id: g.id, game: g.game, ...TEAM_ADV_ROW }));
+
+const TEAM_LEADERS_RAW = [
+  { stat: "PTS", player: "Jayson Tatum", value: "27.1" },
+  { stat: "REB", player: "Jayson Tatum", value: "8.7" },
+  { stat: "AST", player: "Derrick White", value: "5.4" },
+  { stat: "STL", player: "Jayson Tatum", value: "1.2" },
+  { stat: "BLK", player: "Kristaps Porzingis", value: "1.8" },
+  { stat: "3PM", player: "Sam Hauser", value: "2.9" },
+  { stat: "TS%", player: "Kristaps Porzingis", value: ".632" },
+  { stat: "USG%", player: "Jayson Tatum", value: "31.2" },
+  { stat: "FG%", player: "Kristaps Porzingis", value: ".512" },
+  { stat: "3P%", player: "Sam Hauser", value: ".421" },
+  { stat: "TOV", player: "Jayson Tatum", value: "2.8" },
+  { stat: "MIN", player: "Jayson Tatum", value: "36.2" },
+];
+
+const ROSTER_RAW = [
+  { name: "Jayson Tatum", position: "F", number: "0", height: "6-8" },
+  { name: "Jaylen Brown", position: "G-F", number: "7", height: "6-6" },
+  { name: "Derrick White", position: "G", number: "9", height: "6-4" },
+  { name: "Jrue Holiday", position: "G", number: "4", height: "6-3" },
+  { name: "Al Horford", position: "C-F", number: "42", height: "6-9" },
+  { name: "Kristaps Porzingis", position: "C-F", number: "8", height: "7-2" },
+  { name: "Sam Hauser", position: "F", number: "30", height: "6-7" },
+  { name: "Payton Pritchard", position: "G", number: "11", height: "6-1" },
+  { name: "Luke Kornet", position: "C-F", number: "40", height: "7-1" },
+  { name: "Xavier Tillman", position: "F", number: "26", height: "6-8" },
+  { name: "Oshae Brissett", position: "F", number: "12", height: "6-7" },
+  { name: "Baylor Scheierman", position: "G", number: "55", height: "6-6" },
+  { name: "Jordan Walsh", position: "F", number: "27", height: "6-6" },
+  { name: "Neemias Queta", position: "C", number: "88", height: "7-0" },
+];
+
+function withTatumFlag(list) {
+  return list.map((item) => ({ ...item, isTatum: item.player === "Jayson Tatum" || item.name === "Jayson Tatum", isNotTatum: !(item.player === "Jayson Tatum" || item.name === "Jayson Tatum") }));
+}
+
+const TEAM_LEADERS = withTatumFlag(TEAM_LEADERS_RAW);
+const ROSTER = withTatumFlag(ROSTER_RAW);
+
+const PLAYER = {
+  name: "Jayson Tatum", team: "BOS", season: "2024-25", seasonGS: "7.1", gsRank: 8, gsRankTotal: 312,
+  accolades: [
+    { label: "Championships", value: "1", subline: "2024" },
+    { label: "All-NBA", value: "4·1", subline: "4 1st · 1 2nd team" },
+    { label: "All-Star", value: "6", subline: "selections" },
+    { label: "Draft", value: "3rd", subline: "2017 · 1st All-Rookie" },
+  ],
+  avgGeneral: { wl: "5-2", min: "36.2", pts: "27.4", fg_pct: ".500", fg3_pct: ".353", reb: "8.1", ast: "6.6", stl: "1.4", pm: "+8.2" },
+  avgAdvanced: { ts_pct: ".582", efg_pct: ".548", usg_pct: "29.6", pie: ".148" },
+};
+
+const PLAYER_GAMES_GENERAL = [
+  { id: "live", game: "LIVE vs MIA", wl: "—", min: 22, pts: 19, fg_pct: ".471", fg3_pct: ".200", reb: 7, ast: 7, stl: 1, pm: "+4" },
+  { id: "g1", game: "11/02 vs CHA", wl: "W", min: 38, pts: 32, fg_pct: ".545", fg3_pct: ".375", reb: 9, ast: 6, stl: 2, pm: "+18" },
+  { id: "g2", game: "10/30 @ MIL", wl: "L", min: 35, pts: 24, fg_pct: ".429", fg3_pct: ".286", reb: 6, ast: 8, stl: 0, pm: "-6" },
+  { id: "g3", game: "10/28 @ NYK", wl: "W", min: 40, pts: 28, fg_pct: ".526", fg3_pct: ".444", reb: 7, ast: 5, stl: 1, pm: "+11" },
+  { id: "g4", game: "10/26 vs IND", wl: "W", min: 33, pts: 21, fg_pct: ".438", fg3_pct: ".167", reb: 6, ast: 9, stl: 2, pm: "+7" },
+  { id: "g5", game: "10/24 @ WAS", wl: "W", min: 36, pts: 27, fg_pct: ".550", fg3_pct: ".400", reb: 9, ast: 4, stl: 1, pm: "+9" },
+  { id: "g6", game: "10/22 vs NYK", wl: "W", min: 39, pts: 35, fg_pct: ".542", fg3_pct: ".455", reb: 10, ast: 7, stl: 3, pm: "+22" },
+  { id: "g7", game: "10/19 @ DET", wl: "L", min: 34, pts: 18, fg_pct: ".333", fg3_pct: ".000", reb: 4, ast: 6, stl: 0, pm: "-12" },
+];
+
+const PLAYER_GAMES_ADVANCED = [
+  { id: "live", game: "LIVE vs MIA", ts_pct: ".542", efg_pct: ".500", usg_pct: "28.1", pie: ".142" },
+  { id: "g1", game: "11/02 vs CHA", ts_pct: ".612", efg_pct: ".568", usg_pct: "31.2", pie: ".168" },
+  { id: "g2", game: "10/30 @ MIL", ts_pct: ".498", efg_pct: ".476", usg_pct: "29.8", pie: ".112" },
+  { id: "g3", game: "10/28 @ NYK", ts_pct: ".581", efg_pct: ".553", usg_pct: "28.4", pie: ".154" },
+  { id: "g4", game: "10/26 vs IND", ts_pct: ".521", efg_pct: ".500", usg_pct: "26.1", pie: ".131" },
+  { id: "g5", game: "10/24 @ WAS", ts_pct: ".558", efg_pct: ".538", usg_pct: "30.5", pie: ".148" },
+  { id: "g6", game: "10/22 vs NYK", ts_pct: ".598", efg_pct: ".573", usg_pct: "33.8", pie: ".172" },
+  { id: "g7", game: "10/19 @ DET", ts_pct: ".412", efg_pct: ".389", usg_pct: "27.2", pie: ".089" },
+];
+
+function tabStyle(active) {
+  return {
+    padding: "10px 18px 10px 0",
+    marginRight: "20px",
+    background: "none",
+    border: "none",
+    borderBottom: active ? "2px solid var(--color-accent)" : "2px solid transparent",
+    cursor: "pointer",
+    fontFamily: "var(--font-heading)",
+    fontWeight: 600,
+    fontSize: "15px",
+    color: active ? "var(--color-text)" : "color-mix(in srgb, var(--color-text) 55%, transparent)",
+  };
+}
+
+function subTabStyle(active) {
+  return {
+    padding: "6px 16px",
+    borderRadius: "999px",
+    border: active ? "1px solid var(--color-accent)" : "1px solid var(--color-divider)",
+    color: active ? "var(--color-accent)" : "var(--color-text)",
+    background: "transparent",
+    cursor: "pointer",
+    fontFamily: "var(--font-heading)",
+    fontWeight: 600,
+    fontSize: "13px",
+  };
+}
+
+function navBtnStyle(active) {
+  return {
+    padding: "8px 16px",
+    borderRadius: "var(--radius-md)",
+    border: active ? "1px solid var(--color-accent)" : "1px solid var(--color-divider)",
+    color: active ? "var(--color-accent)" : "var(--color-text)",
+    background: "transparent",
+    cursor: "pointer",
+    fontFamily: "var(--font-heading)",
+    fontWeight: 600,
+    fontSize: "14px",
+    whiteSpace: "nowrap",
+  };
+}
+
+function railIconStyle(active) {
+  return {
+    width: "40px",
+    height: "40px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "var(--radius-md)",
+    border: "none",
+    cursor: "pointer",
+    background: active ? "color-mix(in srgb, var(--color-accent-400) 22%, transparent)" : "transparent",
+    color: active ? "var(--color-accent-400)" : "var(--color-neutral-300)",
+  };
+}
+
+const RAIL_ICON_MUTED = {
+  width: "40px",
+  height: "40px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: "var(--radius-md)",
+  border: "none",
+  cursor: "not-allowed",
+  background: "transparent",
+  color: "var(--color-neutral-700)",
+};
+
+class Component extends DCLogic {
+  state = { screen: "home", leaving: false, teamTab: "overview", teamLogTab: "general", playerLogTab: "general" };
+
+  renderVals() {
+    const s = this.state;
+    const goHome = () => {
+      if (s.screen === "home" || s.leaving) return;
+      this.setState({ leaving: true });
+      setTimeout(() => this.setState({ screen: "home", leaving: false }), 430);
+    };
+    const goTeam = () => this.setState({ screen: "team", leaving: false });
+    const goPlayer = () => this.setState({ screen: "player" });
+    const goTeamRoster = () => this.setState({ screen: "team", teamTab: "roster" });
+
+    return {
+      team: TEAM,
+      player: PLAYER,
+      isHomeScreen: s.screen === "home",
+      isTeamScreen: s.screen === "team",
+      isPlayerScreen: s.screen === "player",
+      navIconStyle: {
+        analyzer: railIconStyle(s.screen === "home"),
+        following: railIconStyle(s.screen === "team" || s.screen === "player"),
+        dashboard: RAIL_ICON_MUTED,
+        social: RAIL_ICON_MUTED,
+      },
+      navIconStyleMuted: RAIL_ICON_MUTED,
+      teamScreenStyle: `flex:1;min-width:0;max-width:1040px;margin:0 auto;padding:32px 24px 72px;animation:${s.leaving ? "slideOutToBoard 0.42s cubic-bezier(0.4,0,1,1) forwards" : "slideInFromBoard 0.45s cubic-bezier(0.22,1,0.36,1)"};`,
+      playerScreenStyle: `flex:1;min-width:0;max-width:900px;margin:0 auto;padding:32px 24px 72px;animation:${s.leaving ? "slideOutToBoard 0.42s cubic-bezier(0.4,0,1,1) forwards" : "slideInFromBoard 0.45s cubic-bezier(0.22,1,0.36,1)"};`,
+      teamBtnStyle: navBtnStyle(s.screen === "team"),
+      playerBtnStyle: navBtnStyle(s.screen === "player"),
+      goHome,
+      goTeam,
+      goPlayer,
+      goTeamRoster,
+
+      isOverview: s.teamTab === "overview",
+      isLeaders: s.teamTab === "leaders",
+      isGameLogTab: s.teamTab === "gamelog",
+      isRoster: s.teamTab === "roster",
+      tabOverviewStyle: tabStyle(s.teamTab === "overview"),
+      tabLeadersStyle: tabStyle(s.teamTab === "leaders"),
+      tabGameLogStyle: tabStyle(s.teamTab === "gamelog"),
+      tabRosterStyle: tabStyle(s.teamTab === "roster"),
+      showOverview: () => this.setState({ teamTab: "overview" }),
+      showLeaders: () => this.setState({ teamTab: "leaders" }),
+      showGameLog: () => this.setState({ teamTab: "gamelog" }),
+      showRoster: () => this.setState({ teamTab: "roster" }),
+
+      topLeaders: TEAM_LEADERS.slice(0, 3),
+      teamLeaders: TEAM_LEADERS,
+      roster: ROSTER,
+      rosterCount: ROSTER.length,
+
+      isTeamGeneral: s.teamLogTab === "general",
+      isTeamAdvanced: s.teamLogTab === "advanced",
+      teamLogGeneralBtnStyle: subTabStyle(s.teamLogTab === "general"),
+      teamLogAdvancedBtnStyle: subTabStyle(s.teamLogTab === "advanced"),
+      showTeamGeneral: () => this.setState({ teamLogTab: "general" }),
+      showTeamAdvanced: () => this.setState({ teamLogTab: "advanced" }),
+      teamGamesGeneral: TEAM_GAMES_GENERAL,
+      teamGamesAdvanced: TEAM_GAMES_ADVANCED,
+
+      isPlayerGeneral: s.playerLogTab === "general",
+      isPlayerAdvanced: s.playerLogTab === "advanced",
+      playerLogGeneralBtnStyle: subTabStyle(s.playerLogTab === "general"),
+      playerLogAdvancedBtnStyle: subTabStyle(s.playerLogTab === "advanced"),
+      showPlayerGeneral: () => this.setState({ playerLogTab: "general" }),
+      showPlayerAdvanced: () => this.setState({ playerLogTab: "advanced" }),
+      playerGamesGeneral: PLAYER_GAMES_GENERAL,
+      playerGamesAdvanced: PLAYER_GAMES_ADVANCED,
+    };
+  }
+}
+</script>
+</body>
+</html>

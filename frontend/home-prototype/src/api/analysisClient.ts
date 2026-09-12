@@ -1,3 +1,4 @@
+import type { ChartSpec } from "./chartSpec"
 import { API_URL } from "./config"
 
 function analysisUrl(): string {
@@ -20,6 +21,9 @@ export interface AnalysisResult {
   analysis: string
   data?: unknown[]
   question?: string
+  /** Absent when no chart could be chosen honestly — every refusal and empty-result
+   *  path returns text only. */
+  charts?: ChartSpec[]
 }
 
 /** Calls the real /api/analysis pipeline (router → SQL builder → analyst). */

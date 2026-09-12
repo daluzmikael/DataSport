@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from ingestion.config import RAW_TABLE_DIRS, STAGING_ROOT
-from ingestion.stagers._helpers import concat_parquet_files_batched, season_type_from_slug
+from ingestion.stagers._helpers import concat_parquet_files_batched, season_type_from_slug, normalize_team_identity
 
 logger = logging.getLogger(__name__)
 

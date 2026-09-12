@@ -9,6 +9,10 @@ const copy: Record<Exclude<NavPage, "analyzer" | "favorites">, { title: string; 
     title: "Social",
     body: "See what others are asking and discussing. Placeholder for community feed.",
   },
+  players: {
+    title: "Players",
+    body: "Player library. Search the vault by name to open a profile.",
+  },
 }
 
 export function PlaceholderPage({

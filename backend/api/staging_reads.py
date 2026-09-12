@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
 
 import numpy as np
@@ -71,7 +72,15 @@ _measure_type_column_available: bool | None = None
 
 
 def _measure_type_sql(alias: str = "", measure_type: str = "Base") -> str:
-    """Filter by measure_type when staged; no-op until column exists in parquet."""
+    """Filter by measure_type when staged; no-op until column exists in parquet.
+
+    As of the 2026-08-19 restage this is permanently a no-op for the season tables:
+    the advanced dash slices were folded in as COLUMNS rather than stacked as rows, so
+    there is no `measure_type` column and every row is effectively Base + Advanced at
+    once. Season TS_PCT / EFG_PCT / USG_PCT / PIE are readable as plain columns and
+    need no measure filter. The probe is kept so the function stays correct if a table
+    that does carry `measure_type` (lineups) is ever read through here.
+    """
     global _measure_type_column_available
     if _measure_type_column_available is None:
         try:
@@ -106,6 +115,12 @@ def _q(sql: str) -> list[dict[str, Any]]:
 
 def _like_escape(value: str) -> str:
     return value.replace("'", "''")
+
+
+def _ascii_fold(value: str) -> str:
+    """Drop diacritics so a typed 'Doncic' can match the stored 'Dončić'."""
+    decomposed = unicodedata.normalize("NFKD", value or "")
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
 def _player_id_sql(pid: str, alias: str = "", col: str = "PLAYER_ID") -> str:
@@ -224,7 +239,11 @@ def search_players(
     season: str | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
 ) -> dict[str, Any]:
-    term = _like_escape(q.strip())
+    # The vault stores names as NBA.com publishes them — "Dončić", "Jokić", "Šarić".
+    # A plain ILIKE '%Doncic%' matches none of them, so the search box returned nothing
+    # for the players people search for most, while the analyst (which folds accents in
+    # `sql_builder._entity_filter`) found them fine. Fold both sides here too.
+    term = _like_escape(_ascii_fold(q.strip()))
     if season and season.strip().lower() not in ("", "all"):
         season = _season(season)
         rows = _q(
@@ -235,7 +254,7 @@ def search_players(
               AND season_type = 'Regular Season'
               AND per_mode = 'PerGame'
               AND {_measure_type_sql(measure_type="Base")}
-              AND PLAYER_NAME ILIKE '%{term}%'
+              AND strip_accents(PLAYER_NAME) ILIKE '%{term}%'
             ORDER BY PLAYER_NAME
             LIMIT {int(limit)}
             """
@@ -249,7 +268,7 @@ def search_players(
                 WHERE season_type = 'Regular Season'
                   AND per_mode = 'PerGame'
                   AND {_measure_type_sql(measure_type="Base")}
-                  AND PLAYER_NAME ILIKE '%{term}%'
+                  AND strip_accents(PLAYER_NAME) ILIKE '%{term}%'
             ),
             agg AS (
                 SELECT
@@ -1316,4 +1335,523 @@ def league_scatter(
             "min_gp": min_gp,
             "limit": limit,
         },
+    }
+
+
+# ==========================================================================
+# Phase 7-9 tables — bio, awards, franchise history, coordinate shot charts.
+#
+# These are the reads that let the prototype drop its mock modules: accolades,
+# franchise facts, jersey numbers and real shot coordinates all existed only as
+# hand-written fixtures because there was no endpoint to fetch them.
+# ==========================================================================
+
+_HEIGHT_RE = re.compile(r"^(\d+)-(\d+)$")
+
+
+def _height_inches(value: Any) -> int | None:
+    """'6-4' -> 76. HEIGHT is stored as a feet-dash-inches string, so it does not
+    sort or compare numerically without this."""
+    m = _HEIGHT_RE.match(str(value or "").strip())
+    if not m:
+        return None
+    return int(m.group(1)) * 12 + int(m.group(2))
+
+
+@router.get("/players/{player_id}/bio")
+def player_bio(player_id: str) -> dict[str, Any]:
+    """Physical / draft / origin profile for one player (player_bio)."""
+    pid = _num_id(player_id, "player_id")
+    rows = _q(
+        f"""
+        SELECT *
+        FROM player_bio
+        WHERE {_player_id_sql(pid, col="PERSON_ID")}
+        LIMIT 1
+        """
+    )
+    if not rows:
+        return {"success": True, "data": None}
+    row = rows[0]
+    row["HEIGHT_INCHES"] = _height_inches(row.get("HEIGHT"))
+    return {"success": True, "data": row}
+
+
+# Weekly and monthly honours outnumber every career award combined (1,396 Player
+# of the Week rows against 37 MVPs), so a profile that lists them un-grouped reads
+# as noise. They are still returned — just flagged so the UI can fold them away.
+_PERIODIC_AWARDS = (
+    "NBA Player of the Week",
+    "NBA Player of the Month",
+    "NBA Rookie of the Month",
+    "NBA Defensive Player of the Month",
+)
+
+
+@router.get("/players/{player_id}/awards")
+def player_awards(
+    player_id: str,
+    season: str | None = None,
+    include_periodic: bool = Query(True),
+) -> dict[str, Any]:
+    """Accolades for one player, plus a per-award-type count summary."""
+    pid = _num_id(player_id, "player_id")
+    where = [_player_id_sql(pid, col="PERSON_ID")]
+    if season:
+        where.append(f"TRIM(SEASON) = '{_like_escape(_season(season))}'")
+    if not include_periodic:
+        joined = ", ".join(f"'{_like_escape(a)}'" for a in _PERIODIC_AWARDS)
+        where.append(f"DESCRIPTION NOT IN ({joined})")
+
+    rows = _q(
+        f"""
+        SELECT PERSON_ID, PLAYER_NAME, TEAM, DESCRIPTION, SEASON,
+               ALL_NBA_TEAM_NUMBER, CONFERENCE, MONTH, WEEK
+        FROM player_awards
+        WHERE {' AND '.join(where)}
+        ORDER BY SEASON DESC, DESCRIPTION
+        """
+    )
+
+    summary: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        desc = str(row.get("DESCRIPTION") or "").strip()
+        if not desc:
+            continue
+        entry = summary.setdefault(
+            desc,
+            {"description": desc, "count": 0, "seasons": [], "periodic": desc in _PERIODIC_AWARDS},
+        )
+        entry["count"] += 1
+        label = str(row.get("SEASON") or "").strip()
+        if label and label not in entry["seasons"]:
+            entry["seasons"].append(label)
+
+    ordered = sorted(
+        summary.values(),
+        key=lambda e: (e["periodic"], -e["count"], e["description"]),
+    )
+    return {
+        "success": True,
+        "data": rows,
+        "summary": ordered,
+        "meta": {"count": len(rows), "season": season, "include_periodic": include_periodic},
+    }
+
+
+@router.get("/teams/{team_id}/franchise")
+def team_franchise(team_id: str) -> dict[str, Any]:
+    """Franchise history rows for a team id.
+
+    nba.com returns one row per franchise ERA (Charlotte 1610612766 has a Hornets
+    row, a Bobcats row and a second Hornets row), so the caller gets both the era
+    detail and the franchise-wide roll-up rather than one arbitrary row.
+    """
+    tid = _num_id(team_id, "team_id")
+    rows = _q(
+        f"""
+        SELECT *
+        FROM franchise_history
+        WHERE CAST(TEAM_ID AS VARCHAR) = '{tid}'
+        ORDER BY TRY_CAST(START_YEAR AS INTEGER)
+        """
+    )
+    if not rows:
+        return {"success": True, "data": None, "eras": []}
+
+    def _years(row: dict[str, Any]) -> float:
+        try:
+            return float(row.get("YEARS") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # The widest span is the franchise-wide row; narrower rows are the individual
+    # name eras nested inside it.
+    overall = max(rows, key=_years)
+    eras = [r for r in rows if r is not overall]
+    return {"success": True, "data": overall, "eras": eras, "meta": {"count": len(rows)}}
+
+
+@router.get("/players/{player_id}/shot-chart")
+def player_shot_chart(
+    player_id: str,
+    season: str = "2024-25",
+    season_type: str = "Regular Season",
+    game_id: str | None = None,
+    limit: int = Query(3000, ge=1, le=8000),
+) -> dict[str, Any]:
+    """Per-shot LOC_X / LOC_Y for one player-season (player_shot_chart).
+
+    Distinct from `/court-shots`, which reads the zone-grid `court_shots` table and
+    has no coordinates at all.
+    """
+    pid = _num_id(player_id, "player_id")
+    season = _season(season)
+    season_type = _season_type(season_type)
+    where = [
+        _player_id_sql(pid, col="PLAYER_ID"),
+        f"season = '{season}'",
+        f"season_type = '{season_type}'",
+    ]
+    if game_id:
+        where.append(f"GAME_ID = '{_like_escape(_normalize_game_id(game_id))}'")
+
+    rows = _q(
+        f"""
+        SELECT GAME_ID, GAME_DATE, PERIOD, MINUTES_REMAINING, SECONDS_REMAINING,
+               ACTION_TYPE, SHOT_TYPE, SHOT_ZONE_BASIC, SHOT_ZONE_AREA,
+               SHOT_ZONE_RANGE, SHOT_DISTANCE, LOC_X, LOC_Y, SHOT_MADE_FLAG
+        FROM player_shot_chart
+        WHERE {' AND '.join(where)}
+        ORDER BY GAME_DATE, GAME_EVENT_ID
+        LIMIT {int(limit)}
+        """
+    )
+    made = sum(1 for r in rows if r.get("SHOT_MADE_FLAG") == 1)
+    return {
+        "success": True,
+        "data": rows,
+        "meta": {
+            "season": season,
+            "season_type": season_type,
+            "game_id": game_id,
+            "attempts": len(rows),
+            "made": made,
+            "fg_pct": round(made / len(rows), 4) if rows else None,
+            "truncated": len(rows) >= limit,
+        },
+    }
+
+
+@router.get("/players/{player_id}/shot-chart-seasons")
+def player_shot_chart_seasons(
+    player_id: str,
+    season_type: str = "Regular Season",
+) -> dict[str, Any]:
+    """Seasons for which this player has coordinate shot data."""
+    pid = _num_id(player_id, "player_id")
+    season_type = _season_type(season_type)
+    rows = _q(
+        f"""
+        SELECT season, COUNT(*) AS attempts
+        FROM player_shot_chart
+        WHERE {_player_id_sql(pid, col="PLAYER_ID")}
+          AND season_type = '{season_type}'
+        GROUP BY season
+        ORDER BY season DESC
+        """
+    )
+    return {"success": True, "data": rows}
+
+
+@router.get("/teams/{team_id}/roster-detail")
+def team_roster_detail(
+    team_id: str,
+    season: str = "2024-25",
+) -> dict[str, Any]:
+    """Roster with jersey number, position and physicals (team_roster), joined to
+    the season box-score line so one call fills the whole roster table."""
+    tid = _num_id(team_id, "team_id")
+    season = _season(season)
+    rows = _q(
+        f"""
+        SELECT
+            r.PLAYER_ID,
+            r.PLAYER          AS PLAYER_NAME,
+            r.NUM,
+            r.POSITION,
+            r.HEIGHT,
+            r.WEIGHT,
+            r.AGE,
+            r.EXP,
+            r.SCHOOL,
+            r.HOW_ACQUIRED,
+            s.GP, s.MIN, s.PTS, s.REB, s.AST
+        FROM team_roster r
+        LEFT JOIN player_season_stats s
+               ON FLOOR(TRY_CAST(s.PLAYER_ID AS DOUBLE)) = FLOOR(TRY_CAST(r.PLAYER_ID AS DOUBLE))
+              AND s.season = r.season
+              AND s.season_type = 'Regular Season'
+              AND s.per_mode = 'PerGame'
+        WHERE CAST(r.TeamID AS VARCHAR) = '{tid}'
+          AND r.season = '{season}'
+        ORDER BY s.MIN DESC NULLS LAST, r.PLAYER
+        """
+    )
+    for row in rows:
+        row["HEIGHT_INCHES"] = _height_inches(row.get("HEIGHT"))
+    return {
+        "success": True,
+        "data": rows,
+        "meta": {"season": season, "count": len(rows)},
+    }
+
+
+# ==========================================================================
+# Team directory and a real games board.
+#
+# The prototype's team list, live feed and "past days" rail were hand-written
+# fixtures. There is no live endpoint yet, but the vault holds every completed
+# game through the 2025-26 finals, so the board can be driven by real results
+# instead of invented scores.
+# ==========================================================================
+
+
+@router.get("/teams")
+def teams_directory(season: str | None = None) -> dict[str, Any]:
+    """Every team that played in `season` (default: the latest staged season).
+
+    Reads team_season_stats rather than franchise_history so the names are the
+    ones that franchise actually used that year — asking for 1996-97 returns the
+    Seattle SuperSonics and the Washington Bullets, not their modern successors.
+    """
+    if season:
+        season = _season(season)
+    else:
+        rows = _q("SELECT MAX(season) AS s FROM team_game_logs")
+        season = str(rows[0]["s"]) if rows and rows[0].get("s") else "2025-26"
+
+    # Read team_game_logs, not team_season_stats: the season table has TEAM_ID and
+    # TEAM_NAME but no tricode column at all, and the tricode is what the UI keys on.
+    rows = _q(
+        f"""
+        SELECT DISTINCT
+            CAST(TEAM_ID AS VARCHAR) AS team_id,
+            TEAM_NAME               AS team_full_name,
+            TEAM_ABBREVIATION       AS abbr
+        FROM team_game_logs
+        WHERE season = '{season}'
+          AND season_type = 'Regular Season'
+        ORDER BY TEAM_NAME
+        """
+    )
+    # TEAM_NAME is the full "Boston Celtics"; split so the UI can show either half
+    # without re-deriving it. The nickname is the last token except for the two
+    # two-word nicknames in the league.
+    two_word = ("Trail Blazers",)
+    for row in rows:
+        full = str(row.get("team_full_name") or "").strip()
+        nickname = full.rsplit(" ", 1)[-1] if full else ""
+        for phrase in two_word:
+            if full.endswith(phrase):
+                nickname = phrase
+        row["nickname"] = nickname
+        row["city"] = full[: len(full) - len(nickname)].strip() if nickname else full
+    return {"success": True, "data": rows, "meta": {"season": season, "count": len(rows)}}
+
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _game_date(value: str) -> str:
+    if not _DATE_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"Invalid date: {value}")
+    return value
+
+
+@router.get("/games/dates")
+def game_dates(
+    season: str | None = None,
+    season_type: str = "Regular Season",
+    limit: int = Query(14, ge=1, le=120),
+) -> dict[str, Any]:
+    """Most recent dates that have games, newest first — the board's day rail."""
+    season_type = _season_type(season_type)
+    where = [f"season_type = '{season_type}'"]
+    if season:
+        where.append(f"season = '{_season(season)}'")
+    rows = _q(
+        f"""
+        SELECT
+            CAST(CAST(GAME_DATE AS DATE) AS VARCHAR) AS game_date,
+            COUNT(DISTINCT GAME_ID)                  AS games
+        FROM team_game_logs
+        WHERE {' AND '.join(where)}
+        GROUP BY 1
+        ORDER BY 1 DESC
+        LIMIT {int(limit)}
+        """
+    )
+    return {"success": True, "data": rows, "meta": {"season": season, "season_type": season_type}}
+
+
+@router.get("/games/by-date")
+def games_by_date(
+    date: str,
+    season_type: str = "Regular Season",
+) -> dict[str, Any]:
+    """Every game played on one date, with final score, records and quarter lines."""
+    day = _game_date(date)
+    season_type = _season_type(season_type)
+    rows = _q(
+        f"""
+        SELECT
+            lpad(CAST(GAME_ID AS VARCHAR), 10, '0') AS game_id,
+            CAST(CAST(GAME_DATE AS DATE) AS VARCHAR) AS game_date,
+            TEAM_ID, TEAM_ABBREVIATION, TEAM_NAME, MATCHUP, WL, PTS,
+            FGM, FGA, FG3M, FG3A, FTM, FTA, REB, AST, TOV, PF, season
+        FROM team_game_logs
+        WHERE CAST(GAME_DATE AS DATE) = DATE '{day}'
+          AND season_type = '{season_type}'
+        ORDER BY GAME_ID, MATCHUP
+        """
+    )
+    if not rows:
+        return {"success": True, "data": [], "meta": {"date": day, "count": 0}}
+
+    game_ids = sorted({str(r["game_id"]) for r in rows})
+    id_list = ", ".join(f"'{_like_escape(g)}'" for g in game_ids)
+    line_rows = _q(
+        f"""
+        SELECT game_id, teamTricode,
+               period1Score, period2Score, period3Score, period4Score
+        FROM game_context
+        WHERE game_id IN ({id_list}) AND dataset = '4'
+        """
+    )
+    lines: dict[tuple[str, str], dict[str, Any]] = {
+        (str(r.get("game_id")), str(r.get("teamTricode") or "").upper()): r
+        for r in line_rows
+    }
+
+    def _line(gid: str, abbr: str) -> dict[str, Any]:
+        row = lines.get((gid, abbr.upper()), {})
+        out: dict[str, Any] = {}
+        for i, key in enumerate(
+            ("period1Score", "period2Score", "period3Score", "period4Score"), start=1
+        ):
+            val = row.get(key)
+            if val is not None and str(val) not in ("", "nan"):
+                out[f"q{i}"] = val
+        return out
+
+    by_game: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_game.setdefault(str(row["game_id"]), []).append(row)
+
+    games: list[dict[str, Any]] = []
+    for gid in game_ids:
+        pair = by_game.get(gid) or []
+        if len(pair) != 2:
+            continue
+        away_row, home_row = _split_home_away_teams(pair)
+        if not away_row or not home_row:
+            continue
+
+        def _side(row: dict[str, Any]) -> dict[str, Any]:
+            abbr = str(row.get("TEAM_ABBREVIATION") or "")
+            return {
+                "team_id": str(row.get("TEAM_ID") or ""),
+                "abbr": abbr,
+                "name": str(row.get("TEAM_NAME") or abbr),
+                "score": row.get("PTS"),
+                "wl": row.get("WL"),
+                "line": _line(gid, abbr),
+                "stats": {
+                    "fg": f"{row.get('FGM')}/{row.get('FGA')}",
+                    "fg3": f"{row.get('FG3M')}/{row.get('FG3A')}",
+                    "ft": f"{row.get('FTM')}/{row.get('FTA')}",
+                    "reb": row.get("REB"),
+                    "ast": row.get("AST"),
+                    "tov": row.get("TOV"),
+                    "pf": row.get("PF"),
+                },
+            }
+
+        games.append(
+            {
+                "game_id": gid,
+                "game_date": away_row.get("game_date"),
+                "season": away_row.get("season"),
+                "status": "Final",
+                "away": _side(away_row),
+                "home": _side(home_row),
+            }
+        )
+
+    return {
+        "success": True,
+        "data": games,
+        "meta": {"date": day, "season_type": season_type, "count": len(games)},
+    }
+
+
+@router.get("/games/{game_id}/leaders")
+def game_leaders(game_id: str, top: int = Query(3, ge=1, le=5)) -> dict[str, Any]:
+    """Top scorers / assists / rebounds for a finished game — the card summaries."""
+    gid = _normalize_game_id(game_id)
+    rows = _q(
+        f"""
+        SELECT PLAYER_ID, PLAYER_NAME, TEAM_ABBREVIATION, PTS, AST, REB
+        FROM player_game_logs
+        WHERE lpad(CAST(GAME_ID AS VARCHAR), 10, '0') = '{gid}'
+        """
+    )
+
+    def _top(key: str) -> list[dict[str, Any]]:
+        ranked = sorted(
+            (r for r in rows if r.get(key) is not None),
+            key=lambda r: float(r.get(key) or 0),
+            reverse=True,
+        )
+        return [
+            {
+                "player_id": str(r.get("PLAYER_ID") or ""),
+                "name": r.get("PLAYER_NAME"),
+                "team": r.get("TEAM_ABBREVIATION"),
+                "value": r.get(key),
+            }
+            for r in ranked[:top]
+        ]
+
+    return {
+        "success": True,
+        "data": {"points": _top("PTS"), "assists": _top("AST"), "rebounds": _top("REB")},
+        "meta": {"game_id": gid, "player_count": len(rows)},
+    }
+
+
+@router.get("/games/{game_id}/shot-chart")
+def game_shot_chart(game_id: str) -> dict[str, Any]:
+    """Every shot in one game, both teams, with coordinates.
+
+    One read instead of one per player: the game view needs the whole court, and
+    `player_shot_chart` is keyed on GAME_ID so this is a single scan.
+    """
+    gid = _normalize_game_id(game_id)
+    rows = _q(
+        f"""
+        SELECT PLAYER_ID, PLAYER_NAME, TEAM_ID, TEAM_NAME, PERIOD,
+               ACTION_TYPE, SHOT_TYPE, SHOT_ZONE_BASIC, SHOT_DISTANCE,
+               LOC_X, LOC_Y, SHOT_MADE_FLAG, HTM, VTM
+        FROM player_shot_chart
+        WHERE GAME_ID = '{_like_escape(gid)}'
+        ORDER BY PERIOD, GAME_EVENT_ID
+        """
+    )
+    by_player: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        pid = str(row.get("PLAYER_ID") or "")
+        entry = by_player.setdefault(
+            pid,
+            {
+                "player_id": pid,
+                "name": row.get("PLAYER_NAME"),
+                "team_id": str(row.get("TEAM_ID") or ""),
+                "team_name": row.get("TEAM_NAME"),
+                "attempts": 0,
+                "made": 0,
+            },
+        )
+        entry["attempts"] += 1
+        if row.get("SHOT_MADE_FLAG") == 1:
+            entry["made"] += 1
+
+    return {
+        "success": True,
+        "data": rows,
+        "players": sorted(
+            by_player.values(), key=lambda e: -int(e["attempts"])
+        ),
+        "meta": {"game_id": gid, "attempts": len(rows)},
     }

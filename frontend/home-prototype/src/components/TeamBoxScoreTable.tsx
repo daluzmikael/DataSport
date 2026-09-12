@@ -1,12 +1,10 @@
 import { resolveBoxScorePlayerId } from "../api/gameMappers"
 import { mockPlayerIdFromNba } from "../api/nbaIds"
-import { getBoxScoreProfileId } from "../data/gamePlayerProfiles"
 import {
-  getTeamBoxScore,
   teamBoxColumns,
   type GameLogTab,
   type TeamBoxRow,
-} from "../data/teamBoxScoreMock"
+} from "../data/schema/teamBox"
 import { AskReferenceButton, ReferencedLabel } from "./AskReferenceButton"
 
 /** ~6 player rows visible; header sticks inside the scroll region */
@@ -22,8 +20,8 @@ interface TeamBoxScoreTableProps {
 }
 
 function resolveBoxScoreOpenId(rowId: string): string | undefined {
-  const mockId = getBoxScoreProfileId(rowId)
-  if (mockId) return mockId
+  // Row ids are `nba-<PLAYER_ID>` from the staging box score. The alias table this
+  // used to consult first mapped a dozen fixture ids to fixture profiles.
   const nbaId = resolveBoxScorePlayerId(rowId)
   if (nbaId) return mockPlayerIdFromNba(nbaId)
   return undefined
@@ -37,9 +35,8 @@ export function TeamBoxScoreTable({
   onOpenPlayer,
   onReference,
 }: TeamBoxScoreTableProps) {
-  const data = getTeamBoxScore(teamAbbr)
   const columns = teamBoxColumns(tab)
-  const players = rows ?? data?.byTab[tab].players
+  const players = rows
 
   if (!players?.length) {
     return (
@@ -56,7 +53,7 @@ export function TeamBoxScoreTable({
           <ReferencedLabel label={teamAbbr} onReference={onReference} /> box score
         </h3>
         <p className="text-[10px] text-ds-muted">
-          {subtitle ?? `Tonight · use tabs above for ${data?.seasonLabel ?? "season"} team averages`}
+          {subtitle ?? "Final · use the tabs above for team totals"}
         </p>
       </div>
 

@@ -46,7 +46,7 @@ function RadarGrid({ categories }: { categories: string[] }) {
             key={li}
             points={pts}
             fill="none"
-            stroke="rgba(255,255,255,0.1)"
+            stroke="var(--color-ds-border)"
             strokeWidth={1}
           />
         )
@@ -56,13 +56,13 @@ function RadarGrid({ categories }: { categories: string[] }) {
         const [lx, ly] = polar((360 / n) * i, R + 18)
         return (
           <g key={cat}>
-            <line x1={CX} y1={CY} x2={x} y2={y} stroke="rgba(255,255,255,0.12)" />
+            <line x1={CX} y1={CY} x2={x} y2={y} stroke="var(--color-ds-border)" />
             <text
               x={lx}
               y={ly}
               textAnchor="middle"
               dominantBaseline="middle"
-              fill="rgba(255,255,255,0.55)"
+              fill="var(--color-ds-muted)"
               fontSize={10}
               fontWeight={600}
             >
@@ -91,7 +91,10 @@ export function PlayerSkillRadarSolo({
 
   return (
     <div>
-      <p className="mb-2 text-center text-xs font-medium text-ds-text">{title}</p>
+      {/* Empty title suppresses the header, for callers that render their own. */}
+      {title ? (
+        <p className="mb-2 text-center text-xs font-medium text-ds-text">{title}</p>
+      ) : null}
       <svg
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         className="mx-auto h-auto w-full max-w-[300px]"
@@ -141,7 +144,10 @@ export function PlayerSkillRadarCompare({
 
   return (
     <div>
-      <p className="mb-2 text-center text-xs font-medium text-ds-text">{title}</p>
+      {/* Empty title suppresses the header, for callers that render their own. */}
+      {title ? (
+        <p className="mb-2 text-center text-xs font-medium text-ds-text">{title}</p>
+      ) : null}
       <svg
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         className="mx-auto h-auto w-full max-w-[300px]"

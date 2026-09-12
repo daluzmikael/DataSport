@@ -1,11 +1,5 @@
 import { useCallback, useMemo, useState } from "react"
-import {
-  CHAT_FOLDERS,
-  CHAT_THREADS,
-  LIVE_FEED,
-  SAMPLE_MESSAGES,
-} from "./data/mock"
-import { buildLiveDashboardFeed } from "./data/liveDashboardFeed"
+import { LIVE_FEED } from "./data/liveState"
 import { postAnalysis } from "./api/analysisClient"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
 import { ConversationProvider, useConversation } from "./contexts/ConversationContext"
@@ -27,14 +21,18 @@ function AppShell() {
   const [nav, setNav] = useState<NavPage>("analyzer")
   const [activeThread, setActiveThread] = useState<string | null>(null)
   const [chatsOpen, setChatsOpen] = useState(false)
-  const [messages, setMessages] = useState<ChatMessage[]>(SAMPLE_MESSAGES)
+  // The chat opens empty. `SAMPLE_MESSAGES` seeded it with a scripted exchange that
+  // read as a real answer the user had never asked for.
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [detail, setDetail] = useState<DetailTarget>(null)
   const [closingDetail, setClosingDetail] = useState(false)
   const [contextHint, setContextHint] = useState<string | null>(null)
   const [askDraft, setAskDraft] = useState("")
   const [referenceFocusKey, setReferenceFocusKey] = useState(0)
   const { createConversation, saveMessage } = useConversation()
-  const liveFeed = useMemo(() => buildLiveDashboardFeed(LIVE_FEED), [])
+  // Empty until the live endpoints exist — see data/liveState.ts. The board below it
+  // shows real finished games from the vault.
+  const liveFeed = useMemo(() => LIVE_FEED, [])
 
   const handleReference = useCallback((label: string) => {
     setAskDraft((prev) => {
@@ -86,6 +84,7 @@ function AppShell() {
           id: pendingId,
           role: "assistant",
           content: result.analysis,
+          charts: result.charts,
         }
         setMessages((prev) =>
           prev.map((m) =>
@@ -177,8 +176,8 @@ function AppShell() {
         </div>
 
         <ChatSidebar
-          threads={CHAT_THREADS}
-          folders={CHAT_FOLDERS}
+          threads={[]}
+          folders={[]}
           activeId={activeThread}
           onSelect={(id) => {
             setActiveThread(id)

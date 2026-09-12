@@ -6,7 +6,7 @@ import {
 
   TAB_CONFIG,
 
-} from "../data/playerGameLogMock"
+} from "../data/schema/gameLog"
 
 import {
 
@@ -461,17 +461,13 @@ export function PlayerGameLogTable({
 
                                 onClick={() =>
 
-                                  onOpenPlayerGame(
-
-                                    playerId,
-
-                                    live && liveGameId
-
-                                      ? liveGameId
-
-                                      : gameLogRowToGameId(row.id),
-
-                                  )
+                                  {
+                                    const target =
+                                      live && liveGameId
+                                        ? liveGameId
+                                        : gameLogRowToGameId(row.id)
+                                    if (target) onOpenPlayerGame(playerId, target)
+                                  }
 
                                 }
 
@@ -523,17 +519,13 @@ export function PlayerGameLogTable({
 
                                 onClick={() =>
 
-                                  onOpenPlayerGame(
-
-                                    playerId,
-
-                                    live && liveGameId
-
-                                      ? liveGameId
-
-                                      : gameLogRowToGameId(row.id),
-
-                                  )
+                                  {
+                                    const target =
+                                      live && liveGameId
+                                        ? liveGameId
+                                        : gameLogRowToGameId(row.id)
+                                    if (target) onOpenPlayerGame(playerId, target)
+                                  }
 
                                 }
 

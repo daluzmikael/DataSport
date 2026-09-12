@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react"
 
 import type { PlayerLive } from "../types"
 
-import type { SeasonBubbleSet } from "../data/playerSeasonAverages"
+import type { SeasonBubbleSet } from "../data/schema/seasonBubbles"
 import { StagingBadge } from "./StagingBadge"
 
 

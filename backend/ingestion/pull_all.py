@@ -24,6 +24,14 @@ from ingestion.pullers.game_context import pull_game_context
 from ingestion.pullers.game_logs import build_game_id_manifest, pull_player_game_logs, pull_team_game_logs
 from ingestion.pullers.lineups import pull_lineups
 from ingestion.pullers.on_off import pull_player_on_off
+from ingestion.pullers.player_bio import (
+    pull_franchise_history,
+    pull_player_awards,
+    pull_player_bio,
+    pull_team_roster,
+)
+from ingestion.pullers.shot_chart_xy import pull_player_shot_chart
+from ingestion.pullers.synergy import pull_player_synergy, pull_team_synergy
 from ingestion.pullers.season_stats import (
     pull_player_career_stats,
     pull_player_season_stats,
@@ -32,6 +40,8 @@ from ingestion.pullers.season_stats import (
 from ingestion.pullers.shot_zones import pull_player_shot_zones, pull_team_shot_zones
 from ingestion.pullers.standings import pull_team_standings
 from ingestion.pullers.tracking_stats import pull_player_tracking, pull_team_tracking
+from ingestion.utils.checkpoint import PullAlreadyRunning, pull_lock
+from ingestion.config import PULL_STATE_FILE
 from ingestion.utils.seasons import iter_seasons
 
 
@@ -50,11 +60,11 @@ def _setup_logging(log_file: bool) -> None:
     )
 
 
-def main() -> None:
+def _parse_args():
     parser = argparse.ArgumentParser(description="Pull NBA stats into backend/data/raw/")
     parser.add_argument(
         "--phase",
-        choices=("1", "2", "3", "4", "5", "6", "all"),
+        choices=("1", "2", "3", "4", "5", "6", "7", "8", "9", "all"),
         default="all",
         help="Which pull phase to run",
     )
@@ -79,8 +89,10 @@ def main() -> None:
         help="Phase 5: only retry court_shots keys marked failed in pull_state.json",
     )
     parser.add_argument("--log-file", action="store_true", help="Also write data/logs/pull_*.log")
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def _run(args) -> None:
     _setup_logging(args.log_file)
     ensure_data_dirs()
     seasons = iter_seasons(args.start_season, args.end_season)
@@ -133,7 +145,36 @@ def main() -> None:
         pull_player_estimated_metrics(seasons)
         pull_team_estimated_metrics(seasons)
 
+    if phase in ("7", "all"):
+        logging.info("=== Phase 7: player bio + rosters + awards + franchise history ===")
+        pull_player_bio()
+        pull_team_roster(seasons)
+        pull_player_awards()
+        pull_franchise_history()
+
+    if phase in ("8", "all"):
+        logging.info("=== Phase 8: Synergy play types (2015-16 onward) ===")
+        pull_player_synergy(seasons)
+        pull_team_synergy(seasons)
+
+    if phase in ("9", "all"):
+        logging.info("=== Phase 9: LOC_X/LOC_Y shot charts (player_shot_chart) ===")
+        logging.info("NOTE: separate table from court_shots, which stays a zone grid.")
+        pull_player_shot_chart(seasons)
+
     logging.info("Done.")
+
+
+def main() -> None:
+    args = _parse_args()
+    try:
+        # One pull at a time. The checkpoint is a single JSON file rewritten on every
+        # completed item; two processes interleaving those writes corrupt it, which
+        # cost a 187k-key checkpoint on 2026-08-19.
+        with pull_lock(PULL_STATE_FILE):
+            _run(args)
+    except PullAlreadyRunning as exc:
+        raise SystemExit(str(exc))
 
 
 if __name__ == "__main__":

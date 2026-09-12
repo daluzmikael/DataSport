@@ -16,20 +16,38 @@ tables:
     name_column: PLAYER_NAME
     slices: [season, season_type, per_mode]
     covers: >-
-      Player season box score and the default table for most player questions:
-      scoring, shooting splits, rebounding, assists, turnovers, steals, blocks,
-      fouls, plus/minus, double/triple doubles, clutch splits, hustle stats,
-      and league rank columns.
+      Player season box score AND season-level advanced metrics — the default table
+      for almost every player question: scoring, shooting splits, rebounding,
+      assists, turnovers, steals, blocks, fouls, plus/minus, double/triple doubles,
+      clutch splits, hustle stats, true shooting, effective field goal percentage,
+      usage, PIE, offensive/defensive/net rating, pace, usage-share and
+      shot-distribution percentages, and league rank columns.
     key_columns: [GP, W, L, W_PCT, MIN, PTS, FGM, FGA, FG_PCT, FG3M, FG3A, FG3_PCT,
                   FTM, FTA, FT_PCT, OREB, DREB, REB, AST, TOV, STL, BLK, PF,
-                  PLUS_MINUS, DD2, TD3, AGE, TEAM_ABBREVIATION]
+                  PLUS_MINUS, DD2, TD3, AGE, TEAM_ABBREVIATION,
+                  TS_PCT, EFG_PCT, USG_PCT, PIE, OFF_RATING, DEF_RATING, NET_RATING,
+                  PACE, POSS, AST_PCT, AST_TO, AST_RATIO, OREB_PCT, DREB_PCT,
+                  REB_PCT, TM_TOV_PCT]
     column_families:
       - "<STAT>_RANK — league rank for that stat in that season"
       - "clutch_* — same box score restricted to clutch minutes"
       - "hustle_* — contested shots, deflections, charges, screen assists, box outs, loose balls"
+      - "E_* — NBA 'estimated' twins of the rating/pace metrics"
+      - "PCT_* — usage share of the team's makes, attempts, rebounds, assists (Usage slice)"
+      - "PCT_PTS_*, PCT_AST_*, PCT_UAST_* — shot and assist distribution (Scoring slice)"
+      - "PTS_OFF_TOV, PTS_2ND_CHANCE, PTS_FB, PTS_PAINT, OPP_PTS_* (Misc slice)"
+      - "clutch_* — the SAME box score AND advanced set restricted to clutch minutes,
+         lowercased: clutch_pts, clutch_ts_pct, clutch_usg_pct, clutch_net_rating.
+         Use for 'in the clutch' questions; no separate table or filter is needed."
     limits: >-
-      Does NOT contain TS%, eFG%, USG%, PIE, PACE, or offensive/defensive/net
-      rating. For season-level efficiency and impact use player_estimated_metrics.
+      No measure_type column — the advanced/usage/misc/scoring/defense dash slices are
+      folded in as COLUMNS, so box score and advanced sit on the SAME row.
+      per_mode is PerGame, Totals, Per36, Per40 or Per100Possessions.
+      PER-MODE COVERAGE IS NOT UNIFORM: the box-score, advanced and clutch_* columns
+      exist at all five modes, but hustle_* was only pulled at PerGame and Totals and
+      is NULL at Per36/Per40/Per100Possessions. If a question asks for a hustle stat
+      per 36, answer it at PerGame and say so — do not return the empty slice.
+      DEF_WS (Defense slice) is missing for some seasons because that pull is patchy.
 
   team_season_stats:
     entity: team
@@ -37,14 +55,24 @@ tables:
     name_column: TEAM_NAME
     slices: [season, season_type, per_mode]
     covers: >-
-      Team season box score, clutch splits, hustle stats and rank columns.
-      Use for team scoring, shooting, rebounding and turnover questions.
+      Team season box score AND season-level advanced metrics: scoring, shooting,
+      rebounding, turnovers, clutch splits, hustle stats, true shooting, effective
+      field goal percentage, PIE, offensive/defensive/net rating, pace, and rank
+      columns. Team names are full names ("Los Angeles Clippers").
     key_columns: [GP, W, L, W_PCT, MIN, PTS, FGM, FGA, FG_PCT, FG3M, FG3A, FG3_PCT,
-                  FTM, FTA, FT_PCT, OREB, DREB, REB, AST, TOV, STL, BLK, PF, PLUS_MINUS]
+                  FTM, FTA, FT_PCT, OREB, DREB, REB, AST, TOV, STL, BLK, PF, PLUS_MINUS,
+                  TS_PCT, EFG_PCT, PIE, OFF_RATING, DEF_RATING, NET_RATING, PACE,
+                  AST_PCT, AST_TO, OREB_PCT, DREB_PCT, REB_PCT, TM_TOV_PCT]
     column_families:
       - "<STAT>_RANK, clutch_*, hustle_* — same pattern as player_season_stats"
+      - "E_* — estimated twins of the rating/pace metrics"
+      - "PCT_PTS_*, PTS_OFF_TOV, PTS_PAINT, OPP_PTS_* — scoring and misc breakdowns"
     limits: >-
-      No advanced ratings. For team efficiency and pace use team_estimated_metrics.
+      No measure_type column; advanced dash slices are folded in as columns.
+      per_mode is PerGame, Totals, Per36, Per40 or Per100Possessions, with the same
+      caveat as player_season_stats: hustle_* exists only at PerGame/Totals.
+      NBA publishes no team Usage slice, so the player-only PCT_FGM / PCT_AST style
+      usage-share columns do not exist here.
 
   player_estimated_metrics:
     entity: player
@@ -77,12 +105,24 @@ tables:
     name_column: PLAYER_NAME
     slices: [season, season_type]
     covers: >-
-      Game-by-game player box scores. Use for single-game questions, career or
-      season highs in a game, recent form, streaks, and game-level splits.
+      Game-by-game player box scores. This is the SPLITS table — use it whenever a
+      question narrows by a game-level condition: versus a specific opponent, home
+      or away, wins or losses, a date or month range, the last N games, streaks,
+      single-game highs, or a minutes/points threshold. "LeBron's career averages
+      against the Bulls at home" is ONE read of this table, not a multi-table
+      question — filter it and let the aggregation happen downstream.
     key_columns: [GAME_ID, GAME_DATE, MATCHUP, WL, MIN, PTS, FGM, FGA, FG_PCT,
                   FG3M, FG3A, FG3_PCT, FTM, FTA, FT_PCT, OREB, DREB, REB, AST,
                   TOV, STL, BLK, PF, PLUS_MINUS, TEAM_ABBREVIATION]
-    limits: No per_mode column. One row is one game, not a season average.
+    column_families:
+      - "MATCHUP — encodes both opponent and venue: 'LAL vs. CHI' is HOME,
+         'LAL @ CHI' is AWAY. Use it for opponent and home/away splits."
+      - "WL — 'W' or 'L', for win/loss splits"
+      - "GAME_DATE — for date, month and last-N-games questions"
+    limits: >-
+      No per_mode column. One row is one game, not a season average. Requires a
+      narrowing condition: an unfiltered career-wide pull is thousands of rows and
+      is rejected. For plain career or season averages use player_season_stats.
 
   team_game_logs:
     entity: team
@@ -97,18 +137,21 @@ tables:
   team_standings:
     entity: team
     grain: one row per team per season
-    name_column: TeamName
+    name_column: TEAM_FULL_NAME
     slices: [season, season_type]
     covers: >-
       Standings and record context: wins, losses, win pct, conference and
       division rank, playoff seeding, home/road splits, streaks, last 10,
       points per game for and against.
-    key_columns: [TeamCity, Conference, Division, PlayoffRank, DivisionRank,
-                  WINS, LOSSES, WinPCT, Record, HOME, ROAD, L10, CurrentStreak,
-                  LongWinStreak, PointsPG, OppPointsPG, DiffPointsPG, ClinchIndicator]
+    key_columns: [TEAM_FULL_NAME, TeamCity, TeamName, Conference, Division, PlayoffRank,
+                  DivisionRank, WINS, LOSSES, WinPCT, Record, HOME, ROAD, L10,
+                  CurrentStreak, LongWinStreak, PointsPG, OppPointsPG, DiffPointsPG,
+                  ClinchIndicator]
     limits: >-
       Regular Season only. No per_mode column. Column names are CamelCase here,
-      unlike most other tables.
+      unlike most other tables. The endpoint splits the name: TeamCity is "Washington"
+      and TeamName is just "Bullets". TEAM_FULL_NAME is composed at staging and is the
+      one to filter on, because that is the form users type.
 
   player_shot_zones:
     entity: player
@@ -124,7 +167,12 @@ tables:
                   corner_3_fgm, corner_3_fga, corner_3_fg_pct,
                   above_the_break_3_fgm, above_the_break_3_fga, above_the_break_3_fg_pct,
                   team_abbreviation]
-    limits: Column names are lowercase in this table.
+    limits: >-
+      Column names are lowercase in this table. This is a per-zone SUMMARY with no
+      coordinates, so it CANNOT be drawn on a court. Use it ONLY when the question asks
+      for a NUMBER about one named zone ("what does X shoot from the corner"). Every
+      question about WHERE shots come from — spots, shot chart, shot map, heat map, hot
+      or cold zones, "which areas" — belongs to player_shot_chart, which plots them.
 
   team_shot_zones:
     entity: team
@@ -235,6 +283,255 @@ tables:
     covers: Game metadata — arena, attendance, period scores, lead changes, paint points, bench points.
     limits: Keyed by game_id with no season column. Rarely routable on its own.
 
+  player_on_off:
+    entity: player
+    grain: one row per player per team per season per season_type per per_mode per COURT_STATUS
+    name_column: PLAYER_NAME
+    slices: [season, season_type, per_mode]
+    covers: >-
+      On/off court impact. How a team performed with a player ON the floor versus
+      OFF it. Use for "how much better are the Celtics with X on the court",
+      lineup-impact and rotation questions. This table ALREADY CARRIES the offensive,
+      defensive and net ratings for both states, so "which team had the best defensive
+      rating with X on the floor" is a SINGLE-table question — do not call it
+      multi-table because the word "rating" appears.
+    key_columns: [COURT_STATUS, GP, MIN, PLUS_MINUS, OFF_RATING, DEF_RATING, NET_RATING,
+                  TEAM_ID, TEAM_NAME, TEAM_ABBREVIATION]
+    limits: >-
+      COURT_STATUS is 'On' or 'Off' — a comparison needs BOTH rows for the player,
+      so do not filter it away. Coverage starts 2007-08, not 1996-97.
+      Do NOT add your own minimum-games row_filter. A qualifying floor is applied
+      automatically after routing (default 20 games, overridden by the user) and is
+      stated in the answer. Adding a second one double-filters.
+
+  player_synergy:
+    entity: player
+    grain: one row per player per season per season_type per play_type per type_grouping
+    name_column: PLAYER_NAME
+    slices: [season, season_type]
+    covers: >-
+      Synergy play-type breakdowns: isolation, pick-and-roll (ball handler and roll
+      man), post-up, spot-up, transition, hand-off, cut, off-screen, put-backs.
+      Use for "who is the best isolation scorer", "how good is X in the pick and
+      roll", play-style and shot-diet questions.
+    key_columns: [play_type, type_grouping, POSS, PTS, PPP, PERCENTILE, GP, FG_PCT,
+                  EFG_PCT, POSS_PCT, SCORE_POSS_PCT, TOV_POSS_PCT, TEAM_ABBREVIATION]
+    column_families:
+      - "play_type: Isolation, Transition, PRBallHandler, PRRollman, Postup, Spotup, Handoff, Cut, OffScreen, OffRebound, Misc"
+      - "type_grouping: offensive (scoring in that play type) or defensive (defending it)"
+    limits: >-
+      Coverage starts 2015-16 — Synergy tracking does not exist before that. per_mode
+      is Totals only. ALWAYS set type_grouping via row_filters. Set play_type too when
+      the question is about ONE play type; when it compares two ("isolation versus
+      spot-up"), leave play_type UNFILTERED so both rows come back — comparing play
+      types is two rows of this one table, never two tables. PPP (points per possession) is
+      the efficiency measure and PERCENTILE is the league rank as a 0-1 fraction.
+      Do NOT add your own minimum-possession row_filter. A qualifying floor is applied
+      automatically after routing (default 100 possessions, overridden by whatever the
+      user asks for) and is stated in the answer. Adding a second one double-filters.
+
+  team_synergy:
+    entity: team
+    grain: one row per team per season per season_type per play_type per type_grouping
+    name_column: TEAM_NAME
+    slices: [season, season_type]
+    covers: Team version of player_synergy — play-type offense and defense by team.
+    key_columns: [play_type, type_grouping, POSS, PTS, PPP, PERCENTILE, GP, EFG_PCT]
+    limits: >-
+      Same as player_synergy: 2015-16 onward, Totals only, and play_type plus
+      type_grouping must both be set. Team possession counts are large enough that a
+      volume floor is rarely needed, unlike the player table.
+
+  player_bio:
+    entity: player
+    grain: one row per player (NOT per season)
+    name_column: DISPLAY_FIRST_LAST
+    slices: []
+    covers: >-
+      Who a player is: height, weight, position, jersey, birthdate, country, school,
+      draft year/round/pick, years of experience, and first/last NBA season. Use for
+      "how tall is X", "where did X go to college", "when was X drafted".
+    key_columns: [PERSON_ID, DISPLAY_FIRST_LAST, HEIGHT, WEIGHT, POSITION, JERSEY,
+                  BIRTHDATE, COUNTRY, SCHOOL, DRAFT_YEAR, DRAFT_ROUND, DRAFT_NUMBER,
+                  SEASON_EXP, FROM_YEAR, TO_YEAR, GREATEST_75_FLAG, TEAM_NAME]
+    limits: >-
+      NO season column — one row per player, describing them as of the latest pull,
+      and it spans EVERY player in the vault including the long retired, so "the
+      tallest player in the league" needs a TO_YEAR row_filter to mean the current one.
+      The id column is PERSON_ID, not PLAYER_ID.
+      HEIGHT, DRAFT_YEAR, DRAFT_ROUND and DRAFT_NUMBER are STRINGS ("6-9", "Undrafted")
+      and must never be sorted or compared as numbers — "6-10" sorts below "6-9" and
+      "Undrafted" is not 0. Use the numeric companions instead: HEIGHT_INCHES,
+      WEIGHT_LBS, DRAFT_YEAR_NUM, DRAFT_ROUND_NUM, DRAFT_NUMBER_NUM, which are NULL
+      for undrafted players. For per-season stats use player_season_stats.
+
+  player_awards:
+    entity: player
+    grain: one row per award instance per player
+    name_column: PLAYER_NAME
+    slices: [season]
+    covers: >-
+      Individual accolades: MVP, All-NBA, All-Star, Defensive Player of the Year,
+      Rookie of the Year, Player of the Week/Month, championships won as a player.
+      Use for "how many All-Star selections does X have", "has X won MVP",
+      "who won Defensive Player of the Year in 2016-17".
+    key_columns: [PERSON_ID, PLAYER_NAME, TEAM, DESCRIPTION, SEASON,
+                  ALL_NBA_TEAM_NUMBER, TYPE, CONFERENCE, MONTH, WEEK]
+    limits: >-
+      DESCRIPTION holds the award name and counting awards means counting ROWS, so
+      set a generous limit. To ask about ONE award, add a row_filter on DESCRIPTION,
+      e.g. {"column":"DESCRIPTION","op":"contains","value":"Most Valuable Player"}
+      or "All-Star", "All-NBA", "Champion", "Defensive Player of the Year".
+      Weekly and monthly honours (Player of the Week / Player of the Month) dwarf
+      every career award — 1,396 rows against 37 MVPs — so exclude them with
+      {"column":"DESCRIPTION","op":"not_contains","value":"of the Week"} unless the
+      question is about them. season_from/season_to DO work here: SEASON mixes NBA
+      labels ("2015-16") with bare Olympic years ("2016"), and the builder compares
+      both on their end year. No season_type column and no per_mode.
+
+  team_roster:
+    entity: team
+    grain: one row per player per team per season
+    name_column: PLAYER
+    team_name_column: TEAM_NAME
+    slices: [season]
+    covers: >-
+      Who was on a roster: jersey number, position, height, weight, age, experience,
+      school, and how the player was acquired. Use for "who was on the 2016 Warriors",
+      "what number did X wear".
+    key_columns: [TeamID, TEAM_NAME, TEAM_ABBREVIATION, season, PLAYER, PLAYER_ID,
+                  NUM, POSITION, HEIGHT, WEIGHT, AGE, EXP, SCHOOL, HOW_ACQUIRED]
+    limits: >-
+      The team id column is TeamID (mixed case), not TEAM_ID. TEAM_NAME and
+      TEAM_ABBREVIATION are composed at staging from the id and season, so they carry
+      the era's own name. No season_type column. Roster membership only; it carries
+      no statistics.
+
+  franchise_history:
+    entity: team
+    grain: one row per franchise era
+    name_column: TEAM_FULL_NAME
+    slices: []
+    covers: >-
+      Franchise-level record and honours across an era: total games, wins, losses,
+      win percentage, playoff appearances, division titles, conference titles and
+      LEAGUE TITLES (championships). Use for "how many championships have the
+      Celtics won", "what is the Lakers all-time record".
+    key_columns: [TEAM_ID, TEAM_CITY, TEAM_NAME, START_YEAR, END_YEAR, YEARS, GAMES,
+                  WINS, LOSSES, WIN_PCT, PO_APPEARANCES, DIV_TITLES, CONF_TITLES,
+                  LEAGUE_TITLES]
+    limits: >-
+      NO season column. Rows are eras bounded by START_YEAR / END_YEAR, so a
+      relocated franchise has several rows (Seattle and Oklahoma City are separate
+      rows for the same TEAM_ID). Summing across rows for one TEAM_ID gives the
+      all-time figure.
+      TEAM_NAME is the NICKNAME ONLY ("Celtics") and TEAM_CITY the city ("Boston").
+      TEAM_FULL_NAME is composed at staging and is what to filter on.
+
+  player_shot_chart:
+    entity: player
+    grain: one row per SHOT ATTEMPT
+    name_column: PLAYER_NAME
+    slices: [season, season_type]
+    covers: >-
+      Every shot attempt with court coordinates: LOC_X / LOC_Y position, distance,
+      make or miss, action type (dunk, pull-up, step-back), period and clock. Use for
+      shot charts, shot-location plots, and "where does X shoot from" questions.
+    key_columns: [PLAYER_ID, PLAYER_NAME, GAME_ID, GAME_DATE, LOC_X, LOC_Y,
+                  SHOT_DISTANCE, SHOT_MADE_FLAG, ACTION_TYPE, SHOT_TYPE, PERIOD,
+                  SHOT_ZONE_BASIC, SHOT_ZONE_AREA, SHOT_ZONE_RANGE, TEAM_NAME]
+    limits: >-
+      6.3 MILLION rows — one per shot — but reads of this table are aggregated into
+      court hex cells automatically, so ANY scope is safe: one season, a whole career,
+      or the entire league all come back as roughly 1,200 cells. Do not avoid this
+      table for lacking a season filter.
+      CHOOSING BETWEEN THIS AND player_shot_zones — decide by what the question WANTS:
+        * A PICTURE of the floor -> THIS TABLE. "where does X shoot from", "favourite
+          spots", "shot chart", "shot map", "heat map", "hot zones", "cold zones",
+          "where is he most efficient", "where can't he shoot", "which areas", "plot
+          his shots". Anything answered by looking at a court belongs here.
+        * A NUMBER for one named zone -> player_shot_zones. "what percentage does X
+          shoot from the corner", "how many restricted-area attempts did X have".
+      When both readings are possible, prefer THIS table: it can answer the number too
+      (filter SHOT_ZONE_BASIC) and it draws the court as well.
+      SHOT_MADE_FLAG is 1/0, so a shooting percentage is AVG(SHOT_MADE_FLAG)
+      and makes are SUM(SHOT_MADE_FLAG). Coordinates are in tenths of a foot from the
+      basket, x across and y up the floor.
+      A GAME NAMED BY AN ACHIEVEMENT rather than a date — "his 60 point game", "the
+      game he had a triple double", "his playoff career high" — CANNOT be resolved
+      here: this table holds shots, not game point totals, so there is nothing to match
+      "60 points" against. Do NOT drop the condition and return every shot instead;
+      that silently answers a different question with a career chart. Set
+      supported=false with
+        "unsupported_reason": "NEEDS_GAME_LOOKUP: identifying a game by its point total
+         needs the game logs. Ask for that game by date instead."
+      ONE SPECIFIC GAME: filter GAME_DATE, which is TEXT in "YYYY-MM-DD" form — so
+      "April 30 2021" is {"column": "GAME_DATE", "op": "eq", "value": "2021-04-30"}.
+      A player plays at most one game a day, so the DATE ALONE identifies the game and
+      no opponent filter is needed with it.
+      OPPONENT: there is NO MATCHUP column on this table. The two teams are HTM and VTM
+      and they hold TRICODES, not city or nickname — San Antonio Spurs is "SAS", Boston
+      is "BOS". Filter {"column": "VTM", "op": "contains", "value": "SAS"} and both
+      sides of the fixture are matched automatically. NEVER put a team name into
+      SHOT_ZONE_BASIC, TEAM_NAME or any other column to stand in for the opponent: it
+      validates, means nothing, and silently returns zero rows.
+      SHOT_ZONE_BASIC has EXACTLY these seven values: "Restricted Area", "In The
+      Paint (Non-RA)", "Mid-Range", "Left Corner 3", "Right Corner 3", "Above the
+      Break 3", "Backcourt". There is no combined "Corner 3" value, so a question
+      about corner threes needs op "contains" with value "Corner 3" to catch both
+      sides; "eq" with "Corner 3" matches zero rows. Use SHOT_TYPE ("2PT Field Goal"
+      / "3PT Field Goal") for all threes, not a zone filter.
+      This is NOT court_shots: that table is a pre-aggregated ZONE GRID with FGA/FGM
+      per zone and no coordinates. For "what percentage does X shoot from the corner"
+      prefer player_shot_zones; use this table when actual x/y positions are needed.
+
+# Per-mode coverage, for the router:
+#   player_season_stats / team_season_stats -> all five per_modes
+#   everything else (tracking, shot zones, lineups, on/off, game logs) -> PerGame/Totals
+#     or no per_mode column at all.
+#   So "per 36 points" is answerable and "per 36 drives" is not. When a per-36 style
+#   question targets a table that lacks it, answer at PerGame and say which mode was used.
+
+  legacy_season_stats:
+    entity: player
+    grain: one row per player per season per season_type (Totals only)
+    name_column: PLAYER_NAME
+    slices: [season, season_type, per_mode]
+    covers: >-
+      Pre-1996-97 player seasons, 1951-52 through 1995-96, from NBA.com's LeagueLeaders.
+      This is the ONLY table with data before 1996-97. Use it for any question about
+      Wilt Chamberlain, Bill Russell, Kareem, Magic, Bird, Isiah, Barkley, Stockton's
+      early years, or 1980s and earlier basketball generally.
+    key_columns: [GP, MIN, PTS, FGM, FGA, FG_PCT, FTM, FTA, FT_PCT, OREB, DREB, REB,
+                  AST, STL, BLK, TOV, PF, TEAM_ABBREVIATION]
+    limits: >-
+      per_mode is Totals ONLY — there is no per-game variant for these seasons, so a
+      per-game question must be answered from totals and games with that stated.
+      NO advanced metrics: no TS_PCT, EFG_PCT, USG_PCT, PIE, ratings or pace, because
+      they were never recorded. FG3M/FG3A/FG3_PCT are NULL before 1979-80 (no three
+      point line) — null means the shot did not exist, not that it was missed.
+      Steals, blocks and turnovers are null before 1973-74. Does NOT overlap
+      player_season_stats: that table starts at 1996-97 and this one ends at 1995-96.
+
+  all_time_leaders:
+    entity: player
+    grain: one row per player per stat
+    name_column: PLAYER_NAME
+    slices: []
+    covers: >-
+      NBA.com's own career leaderboards, already ranked, spanning every era. THE table
+      for "who has the most career X in NBA history", "all-time leader in X", "where
+      does X rank all-time". Long format: STAT names the category, VALUE is the career
+      figure, STAT_RANK is the all-time rank.
+    key_columns: [PLAYER_NAME, STAT, VALUE, STAT_RANK, IS_ACTIVE]
+    limits: >-
+      No season column — these are whole-career totals and cannot be filtered by year.
+      Filter STAT with a row_filter to pick the category (PTS, AST, REB, STL, BLK, GP
+      and so on) and order by STAT_RANK ascending, or VALUE descending.
+      Use this INSTEAD OF summing player_season_stats for any all-time question:
+      summing that table only sees 1996-97 onward and returns Chris Paul as the career
+      assists leader when the answer is John Stockton.
+
 # Applied when the router leaves a field null.
 defaults:
   season_type: Regular Season
@@ -248,3 +545,8 @@ unsupported_shapes:
   - "Player stats combined with lineup or on/off data"
   - "Anything requiring game-level advanced metrics filtered by season"
   - "Any question that would need a join, union, or two different tables to answer"
+
+# NOT unsupported any more, as of the 2026-08-19 restage — do not reject these:
+#   "box score plus true shooting / usage / PIE / net rating for a player season"
+#   "team box score plus team true shooting or net rating"
+# Both now live on one row of player_season_stats / team_season_stats.

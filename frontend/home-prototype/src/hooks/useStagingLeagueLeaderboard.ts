@@ -3,7 +3,6 @@ import { USE_STAGING_API } from "../api/config"
 import {
   DEFAULT_LEADERBOARD_SEASON,
   leaderboardFromRows,
-  mockScoringLeaderboard,
   type LeaderboardEntry,
 } from "../api/playerLeaderboardData"
 import { resolveNbaPlayerId } from "../api/nbaIds"
@@ -45,12 +44,9 @@ export function useStagingLeagueLeaderboard(
   }, [season, stat, highlightNbaId])
 
   const entries: LeaderboardEntry[] = useMemo(() => {
-    if (fromApi && rows?.length) {
-      const parsed = leaderboardFromRows(rows)
-      if (parsed.length) return parsed
-    }
-    return mockScoringLeaderboard(highlightNbaId ?? undefined)
-  }, [rows, fromApi, highlightNbaId])
+    if (fromApi && rows?.length) return leaderboardFromRows(rows)
+    return []
+  }, [rows, fromApi])
 
   return { entries, fromApi, loading, season }
 }

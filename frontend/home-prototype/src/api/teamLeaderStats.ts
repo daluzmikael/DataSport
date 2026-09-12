@@ -1,4 +1,4 @@
-import type { TeamLeaderStatId, TeamSeasonLeaderEntry } from "../data/teamSeasonLeadersMock"
+import type { TeamLeaderStatId, TeamSeasonLeaderEntry } from "../data/schema/teamLeaders"
 
 /** API `stat` query param for `/teams/{id}/leaders`. */
 export const TEAM_LEADER_API_STATS: Record<TeamLeaderStatId, string | null> = {

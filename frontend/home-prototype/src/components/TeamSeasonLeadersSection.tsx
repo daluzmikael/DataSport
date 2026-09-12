@@ -1,4 +1,4 @@
-import { TEAM_LEADER_STAT_OPTIONS } from "../data/teamSeasonLeadersMock"
+import { TEAM_LEADER_STAT_OPTIONS } from "../data/schema/teamLeaders"
 import { useStagingTeamAllLeaders, useTeamVaultSeason } from "../hooks/useStagingTeam"
 import type { TeamProfile } from "../types"
 import { ReferencedLabel } from "./AskReferenceButton"

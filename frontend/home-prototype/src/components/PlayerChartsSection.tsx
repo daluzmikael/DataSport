@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { CAREER_LOG_VALUE } from "../data/playerGameLogMock"
+import { CAREER_LOG_VALUE } from "../data/schema/gameLog"
 import {
   DEFAULT_LEADERBOARD_SEASON,
   LEADERBOARD_STAT_LABELS,

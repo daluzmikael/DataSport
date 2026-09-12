@@ -4,6 +4,8 @@ import type { TeamGameLive } from "../../types"
 interface TeamGameCardProps {
   game: TeamGameLive
   onOpen: () => void
+  /** True only when the reader actually follows one of these teams. */
+  followed?: boolean
 }
 
 function LeaderCol({ label, lines }: { label: string; lines: { name: string; value: number }[] }) {
@@ -35,7 +37,7 @@ function formatQuarterTotals(abbr: string, line: TeamGameLive["away"]["line"]): 
   return `${abbr} ${parts.join("-")}`
 }
 
-export function TeamGameCard({ game, onOpen }: TeamGameCardProps) {
+export function TeamGameCard({ game, onOpen, followed = false }: TeamGameCardProps) {
   const { home, away, period, clock } = game
   const isLive = game.isLive
 
@@ -49,11 +51,11 @@ export function TeamGameCard({ game, onOpen }: TeamGameCardProps) {
         {isLive ? (
           <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-ds-live">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ds-live" />
-            Live · Following
+            {followed ? "Live · Following" : "Live"}
           </span>
         ) : (
           <span className="text-[10px] font-bold uppercase tracking-wide text-ds-muted">
-            Final · Following
+            {followed ? "Final · Following" : "Final"}
           </span>
         )}
         <ChevronRight className="h-4 w-4 text-ds-muted opacity-0 transition group-hover:opacity-100" />

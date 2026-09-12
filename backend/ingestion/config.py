@@ -29,8 +29,29 @@ RAW_TABLE_DIRS = {
     "player_on_off": RAW_ROOT / "player_on_off",
     "player_estimated_metrics": RAW_ROOT / "player_estimated_metrics",
     "team_estimated_metrics": RAW_ROOT / "team_estimated_metrics",
+    # Phase 7 — player identity and accolades. Slowly-changing, player-grain rather
+    # than season-grain, so these resume by player id rather than by season.
+    "player_bio": RAW_ROOT / "player_bio",
+    "team_roster": RAW_ROOT / "team_roster",
+    "player_awards": RAW_ROOT / "player_awards",
+    "franchise_history": RAW_ROOT / "franchise_history",
+    # Phase 8 — Synergy play types. League-wide per play type, not per player.
+    "player_synergy": RAW_ROOT / "player_synergy",
+    "team_synergy": RAW_ROOT / "team_synergy",
+    # Phase 9 - per-shot LOC_X/LOC_Y coordinates. Separate from court_shots,
+    # which is a zone grid and stays as it is.
+    "player_shot_chart": RAW_ROOT / "player_shot_chart",
     "third_party_metrics": THIRD_PARTY_METRICS_ROOT,
 }
+
+# Synergy tracking only exists from 2015-16 onward. Asking for older seasons returns
+# an empty body, which would otherwise look like a transport failure and burn retries.
+SYNERGY_START_SEASON = "2015-16"
+
+SYNERGY_PLAY_TYPES = (
+    "Isolation", "Transition", "PRBallHandler", "PRRollman", "Postup",
+    "Spotup", "Handoff", "Cut", "OffScreen", "OffRebound", "Misc",
+)
 
 START_SEASON = "1996-97"
 END_SEASON = "2025-26"

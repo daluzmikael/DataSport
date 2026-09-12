@@ -1,7 +1,5 @@
-import { getPlayerSeasonInsight } from "../data/playerAnalyzerMock"
-import { getPlayerAccolades } from "../data/playerAccoladesMock"
-import { useStagingPlayerCareerTotals } from "../hooks/useStagingPlayer"
-import { LIVE_FEED } from "../data/mock"
+import { usePlayerAccolades } from "../hooks/useStagingPlayerProfileData"
+import { LIVE_FEED } from "../data/liveState"
 import type { PlayerLive } from "../types"
 import { isPlayerInLiveGame, resolvePlayerGameId } from "../utils/gameLabels"
 import { AnalyzerInsightBlock } from "./AnalyzerInsightBlock"
@@ -17,8 +15,20 @@ interface PlayerProfileDetailProps {
 }
 
 function PlayerAccoladesRow({ playerId }: { playerId: string }) {
-  const { careerTotals } = useStagingPlayerCareerTotals(playerId)
-  const stats = getPlayerAccolades(playerId, careerTotals)
+  // Championships, MVPs, All-NBA and draft slot, all from `player_awards` and
+  // `player_bio`. The module this replaced knew two players and showed everyone else
+  // as undrafted with no honours.
+  const { accolades, loading } = usePlayerAccolades(playerId)
+
+  if (loading || !accolades) {
+    return (
+      <p className="py-2 text-center text-[11px] text-ds-muted">
+        {loading ? "Loading career honours…" : "No honours recorded for this player."}
+      </p>
+    )
+  }
+
+  const stats = accolades
 
   return (
     <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-8">
@@ -57,7 +67,6 @@ export function PlayerProfileDetail({
   onReference,
   onAsk,
 }: PlayerProfileDetailProps) {
-  const seasonInsight = getPlayerSeasonInsight(player.id)
   const liveGameId = isPlayerInLiveGame(player, LIVE_FEED)
     ? resolvePlayerGameId(player, LIVE_FEED)
     : undefined
@@ -66,11 +75,9 @@ export function PlayerProfileDetail({
     <div className="mx-auto max-w-4xl space-y-4">
       <AnalyzerInsightBlock
         title="Season overview"
-        badge="Example · AI season summary"
+        question={`Summarise ${player.name}'s most recent season: scoring, efficiency, and what stood out.`}
         onAsk={onAsk}
-      >
-        {seasonInsight}
-      </AnalyzerInsightBlock>
+      />
 
       <section className="rounded-xl border border-ds-border bg-ds-panel p-4">
         <PlayerAccoladesRow playerId={player.id} />

@@ -1,0 +1,17 @@
+[
+  {
+    "question": "Who is the better paint defender between Gobert and Adebayo in 2023-24?",
+    "expected_categories": ["defense", "hustle", "paint_rim"],
+    "expected_tables": ["player_season_stats", "player_tracking"]
+  },
+  {
+    "question": "Best 3 point shooters from 2020",
+    "expected_categories": ["scoring"],
+    "expected_leaderboard": true
+  },
+  {
+    "question": "Compare Curry and Durant scoring efficiency in 2022-23 playoffs",
+    "expected_categories": ["scoring", "efficiency"],
+    "expected_season_type": "Playoffs"
+  }
+]

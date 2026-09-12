@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import type { MockShot } from "../data/mockShots"
+import type { ShotPoint } from "../data/schema/shots"
 
 const PADDING = 20
 const COURT_LEFT = -250
@@ -10,7 +10,7 @@ const SVG_W = COURT_RIGHT - COURT_LEFT + PADDING * 2
 const SVG_H = COURT_TOP - COURT_BOTTOM + PADDING * 2
 const HEX_RADIUS = 8
 
-export type ShotChartMode = "volume" | "accuracy" | "hotspots" | "coldspots"
+export type ShotChartMode = "makes" | "volume" | "accuracy" | "hotspots" | "coldspots"
 export type ShotChartKind = "heatmap" | "zones"
 
 function toSvg(apiX: number, apiY: number): [number, number] {
@@ -87,7 +87,11 @@ function hexPoints(cx: number, cy: number, r: number): string {
 
 type HexBin = { x: number; y: number; made: number; total: number; pct: number }
 
-function buildHexBins(shots: MockShot[], radius: number, mode: ShotChartMode): HexBin[] {
+/** A hex cell before mode filtering. The backend sends exactly this shape (minus `pct`)
+ *  for chat shot charts, already aggregated in DuckDB. */
+export type HexCell = { x: number; y: number; made: number; total: number }
+
+function binShots(shots: ShotPoint[], radius: number): HexCell[] {
   const bins: Record<string, { x: number; y: number; made: number; total: number }> = {}
   const hexW = radius * 2
   const hexH = Math.sqrt(3) * radius
@@ -111,7 +115,12 @@ function buildHexBins(shots: MockShot[], radius: number, mode: ShotChartMode): H
     if (shot.shot_made_flag === 1) bins[key].made += 1
   }
 
-  let binList = Object.values(bins).filter((b) => b.total >= 1)
+  return Object.values(bins).filter((b) => b.total >= 1)
+}
+
+/** Mode filtering, applied to cells from either source. */
+function applyMode(cells: HexCell[], mode: ShotChartMode): HexBin[] {
+  let binList = cells
 
   if (mode === "hotspots") {
     const qualified = binList.filter((b) => b.total >= 5)
@@ -206,7 +215,21 @@ function CourtLines() {
   )
 }
 
+const MADE_COLOR = "#3ecf8e"
+const MISS_COLOR = "#e0685a"
+
+/** Short forms for the toggle row. A chain of ternaries here silently fell through to
+ *  "Worst" for any mode it did not name, which is how "makes" came out labelled Worst. */
+const MODE_TABS: Record<ShotChartMode, string> = {
+  makes: "Makes/misses",
+  volume: "Frequency",
+  accuracy: "Accuracy",
+  hotspots: "Best",
+  coldspots: "Worst",
+}
+
 const MODE_LABELS: Record<ShotChartMode, string> = {
+  makes: "Makes and misses",
   volume: "Shot frequency",
   accuracy: "Shooting accuracy",
   hotspots: "Best shooting zones",
@@ -214,44 +237,67 @@ const MODE_LABELS: Record<ShotChartMode, string> = {
 }
 
 interface ShotChartCourtProps {
-  shots: MockShot[]
+  /** Raw attempts, binned in the browser. Omit when passing `bins`. */
+  shots?: ShotPoint[]
+  /** Cells already binned server-side — what chat shot charts send, so a career or a
+   *  league-wide season costs ~1,200 rows instead of hundreds of thousands. */
+  bins?: HexCell[]
   playerName: string
   subtitle?: string
   chartKind?: ShotChartKind
   defaultMode?: ShotChartMode
+  /** Which toggles to offer. Defaults to the pair implied by `chartKind`; "makes" is
+   *  only offered when `shots` are supplied, since bins cannot be un-aggregated. */
+  modes?: ShotChartMode[]
   legendId?: string
 }
 
 export function ShotChartCourt({
   shots,
+  bins: providedBins,
   playerName,
   subtitle,
   chartKind = "heatmap",
   defaultMode,
+  modes,
   legendId = "protoShotLegend",
 }: ShotChartCourtProps) {
   const initialMode =
     defaultMode ?? (chartKind === "zones" ? "hotspots" : "volume")
   const [mode, setMode] = useState<ShotChartMode>(initialMode)
 
-  const modeOptions: ShotChartMode[] =
-    chartKind === "zones" ? ["hotspots", "coldspots"] : ["volume", "accuracy"]
+  const hasShots = !!shots?.length
+  const modeOptions: ShotChartMode[] = (
+    modes ?? (chartKind === "zones" ? ["hotspots", "coldspots"] : ["volume", "accuracy"])
+  ).filter((m) => m !== "makes" || hasShots)
 
-  const bins = useMemo(() => buildHexBins(shots, HEX_RADIUS, mode), [shots, mode])
+  // Binning is the expensive half and is independent of mode, so it is memoised apart
+  // from the filtering — and skipped entirely when the server already did it.
+  const cells = useMemo(
+    () => providedBins ?? binShots(shots ?? [], HEX_RADIUS),
+    [providedBins, shots],
+  )
+  const bins = useMemo(() => applyMode(cells, mode), [cells, mode])
   const maxVal = useMemo(
     () => (mode === "volume" ? Math.max(...bins.map((b) => b.total), 1) : 1),
     [bins, mode],
   )
 
-  const made = shots.filter((s) => s.shot_made_flag === 1).length
-  const fgPct = shots.length ? ((made / shots.length) * 100).toFixed(1) : "0.0"
+  const attempts = cells.reduce((sum, c) => sum + c.total, 0)
+  const made = cells.reduce((sum, c) => sum + c.made, 0)
+  const fgPct = attempts ? ((made / attempts) * 100).toFixed(1) : "0.0"
   const modeLabel = MODE_LABELS[mode]
   const legendColors = [0, 0.25, 0.5, 0.75, 1].map((v) => getColor(v, mode))
   const legendLeft =
     mode === "volume" ? "Few" : mode === "accuracy" ? "Cold" : mode === "coldspots" ? "Worst" : "Good"
   const legendRight =
     mode === "volume" ? "Many" : mode === "accuracy" ? "Hot" : mode === "coldspots" ? "Bad" : "Best"
-  const title = chartKind === "zones" ? "Shooting zones" : "Shot heat map"
+  const title =
+    mode === "makes"
+      ? "Shot chart"
+      : chartKind === "zones"
+        ? "Shooting zones"
+        : "Shot heat map"
 
   return (
     <div>
@@ -259,8 +305,10 @@ export function ShotChartCourt({
         <div>
           <h3 className="text-sm font-semibold">{title}</h3>
           <p className="text-[11px] text-ds-muted">
-            {subtitle ?? "Season"} · {modeLabel} · {shots.length.toLocaleString()} FGA · {fgPct}%
-            FG
+            {subtitle ?? "Season"} · {modeLabel} · {attempts.toLocaleString()} FGA ·{" "}
+            {mode === "makes"
+              ? `${made} made, ${attempts - made} missed`
+              : `${fgPct}% FG`}
           </p>
         </div>
         <div className="flex rounded-lg border border-ds-border p-0.5 text-[11px]">
@@ -275,13 +323,7 @@ export function ShotChartCourt({
                   : "text-ds-muted hover:text-ds-text"
               }`}
             >
-              {m === "volume"
-                ? "Frequency"
-                : m === "accuracy"
-                  ? "Accuracy"
-                  : m === "hotspots"
-                    ? "Best"
-                    : "Worst"}
+              {MODE_TABS[m]}
             </button>
           ))}
         </div>
@@ -295,7 +337,26 @@ export function ShotChartCourt({
         aria-label={`${playerName} ${title}`}
       >
         <CourtLines />
-        {bins.map((bin, i) => {
+        {mode === "makes" &&
+          (shots ?? []).map((shot, i) => {
+            const [cx, cy] = toSvg(shot.loc_x, shot.loc_y)
+            const hit = shot.shot_made_flag === 1
+            // Makes are filled discs, misses hollow crosses — the shape carries the
+            // distinction as well as the colour, so it survives a colour-blind reader
+            // and a greyscale screenshot.
+            return hit ? (
+              <circle key={i} cx={cx} cy={cy} r={4.5} fill={MADE_COLOR} fillOpacity={0.9}>
+                <title>Made</title>
+              </circle>
+            ) : (
+              <g key={i} stroke={MISS_COLOR} strokeWidth={1.8} strokeLinecap="round">
+                <line x1={cx - 3.6} y1={cy - 3.6} x2={cx + 3.6} y2={cy + 3.6} />
+                <line x1={cx - 3.6} y1={cy + 3.6} x2={cx + 3.6} y2={cy - 3.6} />
+                <title>Missed</title>
+              </g>
+            )
+          })}
+        {mode !== "makes" && bins.map((bin, i) => {
           let colorVal: number
           let size: number
 
@@ -333,6 +394,33 @@ export function ShotChartCourt({
             </g>
           )
         })}
+        {mode === "makes" ? (
+          <g transform={`translate(${SVG_W - 170}, ${SVG_H - 28})`}>
+            <circle cx={6} cy={-5} r={4.5} fill={MADE_COLOR} fillOpacity={0.9} />
+            <text
+              fill="rgba(255,255,255,0.45)"
+              fontSize={9}
+              fontFamily="DM Sans, sans-serif"
+              x={16}
+              y={-2}
+            >
+              Made
+            </text>
+            <g stroke={MISS_COLOR} strokeWidth={1.8} strokeLinecap="round">
+              <line x1={62} y1={-8.6} x2={69} y2={-1.4} />
+              <line x1={62} y1={-1.4} x2={69} y2={-8.6} />
+            </g>
+            <text
+              fill="rgba(255,255,255,0.45)"
+              fontSize={9}
+              fontFamily="DM Sans, sans-serif"
+              x={76}
+              y={-2}
+            >
+              Missed
+            </text>
+          </g>
+        ) : (
         <g transform={`translate(${SVG_W - 170}, ${SVG_H - 28})`}>
           <text fill="rgba(255,255,255,0.45)" fontSize={9} fontFamily="DM Sans, sans-serif" y={-2}>
             {legendLeft}
@@ -355,6 +443,7 @@ export function ShotChartCourt({
             {legendRight}
           </text>
         </g>
+        )}
       </svg>
     </div>
   )

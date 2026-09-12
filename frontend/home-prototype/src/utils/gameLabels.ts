@@ -1,5 +1,4 @@
-import { getGameDetail } from "../data/mock"
-import { getPlayerNextGame } from "../data/playerScheduleMock"
+import { getGameDetail } from "../data/liveState"
 import type { CompactGame, LiveFeedItem, PlayerLive, TeamGameLive, GameDetailView } from "../types"
 
 /** City names for matchup headers (prototype; replace with API labels later). */
@@ -95,10 +94,9 @@ function gameClockMeta(player: PlayerLive): string {
 }
 
 function isGameLive(gameId: string): boolean {
-  const game = getGameDetail(gameId)
+  const game: GameDetailView | undefined = getGameDetail(gameId)
   if (!game) return false
-  if ("isLive" in game) return Boolean(game.isLive)
-  return game.period !== "Final"
+  return Boolean(game.isLive)
 }
 
 /** Historical game log page — always finished. */
@@ -179,21 +177,19 @@ export function resolvePlayerProfileStatus(
   }
 
   if (!player.gameId) {
-    const next = getPlayerNextGame(player.id)
+    // Upcoming fixtures need a schedule endpoint, which does not exist. The module
+    // that filled this returned one hard-coded "next game" for every player.
     return {
       statusLabel: "Not playing tonight",
       statusTone: "offnight",
-      metaLine: next ? `Next: ${next.label} · ${next.when}` : "No game scheduled tonight",
+      metaLine: "No live game",
     }
   }
 
-  const next = getPlayerNextGame(player.id)
   return {
     statusLabel: "Not playing tonight",
     statusTone: "offnight",
-    metaLine: next
-      ? `Last vs ${player.opponentAbbr} · Next: ${next.label} · ${next.when}`
-      : gameClockMeta(player),
+    metaLine: gameClockMeta(player),
   }
 }
 

@@ -19,23 +19,30 @@ import {
   mapTeamStandingsSnapshot,
 } from "../api/mappers"
 import { resolveNbaTeamId, teamAbbrFromProfileId } from "../api/nbaIds"
-import type { GameLogRow, GameLogTab } from "../data/playerGameLogMock"
-import { getTeamSeasonGameLog, getTeamSeasonOptions } from "../data/teamSeasonGameLogBuilder"
+import type { GameLogRow, GameLogTab } from "../data/schema/gameLog"
 import { leaderApiStat, mapLeaderRow, mapLeaderRows } from "../api/teamLeaderStats"
 import {
-  getTeamSeasonLeaders,
   TEAM_LEADER_STAT_OPTIONS,
   type TeamLeaderStatId,
   type TeamSeasonLeaderEntry,
-} from "../data/teamSeasonLeadersMock"
-import { getTeamFranchiseAccolades } from "../data/teamFranchiseFacts"
-import { getTeamSeasonRoster } from "../data/teamSeasonRosterBuilder"
+} from "../data/schema/teamLeaders"
+import { fetchTeamFranchise } from "../api/stagingClient"
 import type {
   TeamCurrentSeasonSnapshot,
+  TeamFranchiseAccolades,
   TeamHistorySeason,
   TeamProfile,
   TeamRosterPlayer,
+  TeamSeasonGameRow,
 } from "../types"
+
+/** What a team surface shows before the vault answers, and when it has nothing.
+ *  Dashes, never a plausible-looking record. */
+const EMPTY_SNAPSHOT: TeamCurrentSeasonSnapshot = {
+  standing: "—",
+  record: "—",
+  bestPlayer: { name: "—", avgGameScore: 0 },
+}
 
 function teamNbaId(profile: TeamProfile): string | null {
   return resolveNbaTeamId(teamAbbrFromProfileId(profile.id))
@@ -51,7 +58,6 @@ function sortSeasonsDesc(seasons: string[]): string[] {
 
 export function useStagingTeamSeasons(profile: TeamProfile) {
   const nbaId = teamNbaId(profile)
-  const mockOptions = getTeamSeasonOptions(profile)
   const [seasons, setSeasons] = useState<string[] | null>(null)
   const [fromApi, setFromApi] = useState(false)
 
@@ -70,7 +76,7 @@ export function useStagingTeamSeasons(profile: TeamProfile) {
         setFromApi(false)
         return
       }
-      setSeasons(sortSeasonsDesc([...apiSeasons, ...mockOptions]))
+      setSeasons(sortSeasonsDesc(apiSeasons))
       setFromApi(true)
     })()
     return () => {
@@ -78,7 +84,7 @@ export function useStagingTeamSeasons(profile: TeamProfile) {
     }
   }, [nbaId])
 
-  const seasonList = fromApi && seasons ? seasons : mockOptions
+  const seasonList = fromApi && seasons ? seasons : []
   return {
     seasons: seasonList,
     latestSeason: seasonList[0] ?? profile.seasonLabel,
@@ -103,9 +109,7 @@ export function useTeamVaultSeason(profile: TeamProfile) {
 
 export function useStagingTeamGameLog(profile: TeamProfile, season: string, tab: GameLogTab) {
   const nbaId = teamNbaId(profile)
-  const [rows, setRows] = useState<ReturnType<typeof getTeamSeasonGameLog>["games"][GameLogTab] | null>(
-    null,
-  )
+  const [rows, setRows] = useState<TeamSeasonGameRow[] | null>(null)
   const [averages, setAverages] = useState<Record<string, string | number> | null>(null)
   const [fromApi, setFromApi] = useState(false)
 
@@ -160,13 +164,24 @@ export function useStagingTeamGameLog(profile: TeamProfile, season: string, tab:
     }
   }, [nbaId, season, tab])
 
-  const mock = getTeamSeasonGameLog(profile, season)
+  // Per-36 and per-100 team game logs are not staged, so those tabs are genuinely
+  // empty rather than filled from the general tab with different-looking numbers.
   const useVaultRows = fromApi && rows != null && (tab === "general" || tab === "advanced")
   return {
-    rows: useVaultRows ? rows : mock.games[tab],
-    averages: fromApi && averages && Object.keys(averages).length ? averages : mock.averages[tab],
+    rows: useVaultRows ? rows : [],
+    averages: fromApi && averages && Object.keys(averages).length ? averages : null,
     fromApi: useVaultRows || (fromApi && averages != null && Object.keys(averages).length > 0),
   }
+}
+
+/** A leader slot the vault has no answer for. The module this replaced INVENTED one —
+ *  a real roster name attached to a generated number, for any team without a fixture. */
+function blankLeaders(): Record<TeamLeaderStatId, TeamSeasonLeaderEntry> {
+  const out = {} as Record<TeamLeaderStatId, TeamSeasonLeaderEntry>
+  for (const { id } of TEAM_LEADER_STAT_OPTIONS) {
+    out[id] = { player: "—", value: "—" }
+  }
+  return out
 }
 
 const EMPTY_LEADERS: TeamSeasonLeaderEntry[] = [
@@ -222,13 +237,14 @@ export function useStagingTeamLeaders(
 /** All 12 per-stat leaders in one shot, for the full Season Leaders table. */
 export function useStagingTeamAllLeaders(profile: TeamProfile, season: string) {
   const nbaId = teamNbaId(profile)
-  const mock = getTeamSeasonLeaders(profile, season)
-  const [leaders, setLeaders] = useState<Record<TeamLeaderStatId, TeamSeasonLeaderEntry>>(mock)
+  const [leaders, setLeaders] = useState<Record<TeamLeaderStatId, TeamSeasonLeaderEntry>>(
+    () => blankLeaders(),
+  )
   const [fromApi, setFromApi] = useState(false)
 
   useEffect(() => {
     if (!nbaId) {
-      setLeaders(getTeamSeasonLeaders(profile, season))
+      setLeaders(blankLeaders())
       setFromApi(false)
       return
     }
@@ -243,11 +259,10 @@ export function useStagingTeamAllLeaders(profile: TeamProfile, season: string) {
         }),
       )
       if (cancelled) return
-      const mockFallback = getTeamSeasonLeaders(profile, season)
       const anyResolved = entries.some(([, row]) => row != null)
-      const result = {} as Record<TeamLeaderStatId, TeamSeasonLeaderEntry>
+      const result = blankLeaders()
       for (const [id, row] of entries) {
-        result[id] = row ? mapLeaderRow(id, row) : mockFallback[id]
+        if (row) result[id] = mapLeaderRow(id, row)
       }
       setLeaders(result)
       setFromApi(anyResolved)
@@ -308,21 +323,60 @@ export function useStagingTeamSeasonSnapshot(profile: TeamProfile, season: strin
     return () => {
       cancelled = true
     }
-  }, [nbaId, season, profile.currentSeason, profile.seasonLabel])
+  }, [nbaId, season, profile.seasonLabel])
 
-  const emptySnapshot: TeamCurrentSeasonSnapshot = {
-    standing: "—",
-    record: "—",
-    bestPlayer: { name: "—", avgGameScore: 0 },
-  }
   return {
-    snapshot: snapshot ?? (nbaId ? emptySnapshot : profile.currentSeason),
+    snapshot: snapshot ?? EMPTY_SNAPSHOT,
     fromApi,
   }
 }
 
+/** Championships, conference titles and all-time record, from `franchise_history`.
+ *
+ * The module this replaced kept a hand-typed founding year per team and derived the
+ * rest — and it had no championship data at all, so every team showed 0 titles. The
+ * vault has had `LEAGUE_TITLES` since the phase-7 pull. */
 export function useStagingTeamFranchiseAccolades(profile: TeamProfile) {
-  return { accolades: getTeamFranchiseAccolades(profile.abbr) }
+  const nbaId = teamNbaId(profile)
+  const [accolades, setAccolades] = useState<TeamFranchiseAccolades | null>(null)
+  const [fromApi, setFromApi] = useState(false)
+
+  useEffect(() => {
+    if (!nbaId) {
+      setAccolades(null)
+      setFromApi(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const payload = await fetchTeamFranchise(nbaId)
+      if (cancelled) return
+      const row = payload?.overall
+      if (!row) {
+        setFromApi(false)
+        return
+      }
+      const wins = Number(row.WINS ?? 0)
+      const losses = Number(row.LOSSES ?? 0)
+      const start = Number(row.START_YEAR ?? 0)
+      setAccolades({
+        allTimeRecord: `${wins}-${losses}`,
+        championships: Number(row.LEAGUE_TITLES ?? 0),
+        conferenceTitles: Number(row.CONF_TITLES ?? 0),
+        // The endpoint gives counts, not dates. Claiming a year would be inventing one.
+        lastChampionship: "—",
+        lastPlayoffs: "—",
+        founded: start ? String(start) : "—",
+        yearsInAssociation: Number(row.YEARS ?? 0),
+      })
+      setFromApi(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [nbaId])
+
+  return { accolades, fromApi }
 }
 
 export function useStagingTeamStandings(profile: TeamProfile, season: string) {
@@ -345,19 +399,18 @@ export function useStagingTeamStandings(profile: TeamProfile, season: string) {
       }
       const mapped = mapTeamStandingsSnapshot(row)
       setStanding({
-        standing: mapped.standing ?? profile.currentSeason.standing,
-        record: mapped.record ?? profile.currentSeason.record,
+        standing: mapped.standing ?? "—",
+        record: mapped.record ?? "—",
       })
       setFromApi(true)
     })()
     return () => {
       cancelled = true
     }
-  }, [nbaId, season, profile.currentSeason])
+  }, [nbaId, season])
 
   return {
-    currentSeason:
-      fromApi && standing ? { ...profile.currentSeason, ...standing } : profile.currentSeason,
+    currentSeason: fromApi && standing ? { ...EMPTY_SNAPSHOT, ...standing } : EMPTY_SNAPSHOT,
     fromApi,
   }
 }
@@ -389,7 +442,7 @@ export function useStagingTeamHistory(profile: TeamProfile) {
   }, [nbaId])
 
   return {
-    history: fromApi && history ? history : profile.history,
+    history: fromApi && history ? history : [],
     fromApi,
   }
 }
@@ -421,7 +474,7 @@ export function useStagingTeamRoster(profile: TeamProfile, season: string) {
   }, [nbaId, season])
 
   return {
-    roster: fromApi && roster ? roster : getTeamSeasonRoster(profile, season),
+    roster: fromApi && roster ? roster : [],
     fromApi,
   }
 }

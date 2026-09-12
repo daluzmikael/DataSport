@@ -1,7 +1,10 @@
-import { useMemo, useState } from "react"
-import { generateBoxScorePlayerShots, generateTeamGameShots, type MockShot } from "../../data/mockShots"
-import { getTeamShotChartRoster, type TeamShotChartPlayer } from "../../data/teamBoxScoreMock"
-import { teamChartColor } from "../../data/teamGameChartsMock"
+import { useEffect, useMemo, useState } from "react"
+
+import { fetchGameShotChart, type GameShotPlayer } from "../../api/stagingClient"
+import { shotFromVaultRow, type ShotPoint } from "../../data/schema/shots"
+import { type TeamShotChartPlayer } from "../../data/schema/teamBox"
+import { teamChartColor } from "../../data/schema/charts"
+import { parseStagingGameId } from "../../utils/stagingGameId"
 
 const ALL_PLAYERS = "__all__"
 
@@ -70,7 +73,7 @@ function hexPoints(cx: number, cy: number, r: number): string {
 
 type HexBin = { x: number; y: number; made: number; total: number; pct: number }
 
-function buildHexBins(shots: MockShot[], radius: number, mode: ShotChartMode): HexBin[] {
+function buildHexBins(shots: ShotPoint[], radius: number, mode: ShotChartMode): HexBin[] {
   const bins: Record<string, { x: number; y: number; made: number; total: number }> = {}
   const hexW = radius * 2
   const hexH = Math.sqrt(3) * radius
@@ -219,21 +222,69 @@ function HexLayer({
 interface TeamGameShotChartProps {
   awayAbbr: string
   homeAbbr: string
+  /** Overlay game id (`game-0022300123`). Without it there are no real shots to draw. */
+  gameId?: string
+}
+
+interface GameShots {
+  byTeamId: Record<string, ShotPoint[]>
+  byPlayerId: Record<string, ShotPoint[]>
+  players: GameShotPlayer[]
+}
+
+/** All shots in one game, grouped by team and by player. */
+function useGameShotChart(gameId?: string): { data: GameShots | null; loading: boolean } {
+  const nbaGameId = gameId ? parseStagingGameId(gameId) : null
+  const [data, setData] = useState<GameShots | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!nbaGameId) {
+      setData(null)
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    ;(async () => {
+      const payload = await fetchGameShotChart(nbaGameId)
+      if (cancelled) return
+      if (!payload) {
+        setData(null)
+        setLoading(false)
+        return
+      }
+      const byTeamId: Record<string, ShotPoint[]> = {}
+      const byPlayerId: Record<string, ShotPoint[]> = {}
+      for (const raw of payload.rows) {
+        const point = shotFromVaultRow(raw)
+        if (!point) continue
+        const teamId = String(raw.TEAM_ID ?? "")
+        const playerId = String(raw.PLAYER_ID ?? "")
+        ;(byTeamId[teamId] ??= []).push(point)
+        ;(byPlayerId[playerId] ??= []).push(point)
+      }
+      setData({ byTeamId, byPlayerId, players: payload.players })
+      setLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [nbaGameId])
+
+  return { data, loading }
 }
 
 function shotsForSelection(
-  teamAbbr: string,
+  teamId: string,
   selection: string,
-  roster: TeamShotChartPlayer[],
-): MockShot[] {
-  if (selection === ALL_PLAYERS) return generateTeamGameShots(teamAbbr)
-  const player = roster.find((p) => p.id === selection)
-  if (!player || player.isDnp || player.fga <= 0) return []
-  return generateBoxScorePlayerShots(player.id, player.fga)
+  data: GameShots | null,
+): ShotPoint[] {
+  if (!data) return []
+  if (selection === ALL_PLAYERS) return data.byTeamId[teamId] ?? []
+  return data.byPlayerId[selection] ?? []
 }
 
-function shotLineStats(shots: MockShot[], player?: TeamShotChartPlayer): string {
-  if (player?.isDnp) return "DNP · no shots"
+function shotLineStats(shots: ShotPoint[], _player?: TeamShotChartPlayer): string {
   if (!shots.length) return "No FGA"
   const made = shots.filter((s) => s.shot_made_flag === 1).length
   const fg = ((made / shots.length) * 100).toFixed(1)
@@ -253,7 +304,7 @@ function TeamPlayerPicker({
   roster: TeamShotChartPlayer[]
   selection: string
   onSelectionChange: (id: string) => void
-  shots: MockShot[]
+  shots: ShotPoint[]
 }) {
   const selectedPlayer = roster.find((p) => p.id === selection)
   const basketHint = align === "left" ? "← left basket" : "right basket →"
@@ -292,9 +343,8 @@ function TeamPlayerPicker({
         >
           <option value={ALL_PLAYERS}>All players</option>
           {roster.map((p) => (
-            <option key={p.id} value={p.id} disabled={p.isDnp}>
+            <option key={p.id} value={p.id}>
               {p.name}
-              {p.isDnp ? " (DNP)" : ""}
             </option>
           ))}
         </select>
@@ -311,21 +361,33 @@ function TeamPlayerPicker({
   )
 }
 
-export function TeamGameShotChart({ awayAbbr, homeAbbr }: TeamGameShotChartProps) {
+export function TeamGameShotChart({ awayAbbr, homeAbbr, gameId }: TeamGameShotChartProps) {
   const [mode, setMode] = useState<ShotChartMode>("volume")
   const [awayPlayerId, setAwayPlayerId] = useState(ALL_PLAYERS)
   const [homePlayerId, setHomePlayerId] = useState(ALL_PLAYERS)
 
-  const awayRoster = useMemo(() => getTeamShotChartRoster(awayAbbr), [awayAbbr])
-  const homeRoster = useMemo(() => getTeamShotChartRoster(homeAbbr), [homeAbbr])
+  const { data, loading } = useGameShotChart(gameId)
+
+  // Team ids come back with the shots, so the two sides are split by the ids that are
+  // actually present rather than by a tricode lookup.
+  const teamIds = useMemo(() => Object.keys(data?.byTeamId ?? {}), [data])
+  const [awayTeamId, homeTeamId] = [teamIds[0] ?? "", teamIds[1] ?? ""]
+
+  const rosterFor = (teamId: string): TeamShotChartPlayer[] =>
+    (data?.players ?? [])
+      .filter((p) => p.team_id === teamId)
+      .map((p) => ({ id: p.player_id, name: p.name, fga: p.attempts }))
+
+  const awayRoster = useMemo(() => rosterFor(awayTeamId), [data, awayTeamId])
+  const homeRoster = useMemo(() => rosterFor(homeTeamId), [data, homeTeamId])
 
   const awayShots = useMemo(
-    () => shotsForSelection(awayAbbr, awayPlayerId, awayRoster),
-    [awayAbbr, awayPlayerId, awayRoster],
+    () => shotsForSelection(awayTeamId, awayPlayerId, data),
+    [awayTeamId, awayPlayerId, data],
   )
   const homeShots = useMemo(
-    () => shotsForSelection(homeAbbr, homePlayerId, homeRoster),
-    [homeAbbr, homePlayerId, homeRoster],
+    () => shotsForSelection(homeTeamId, homePlayerId, data),
+    [homeTeamId, homePlayerId, data],
   )
 
   const awayBins = useMemo(() => buildHexBins(awayShots, HEX_RADIUS, mode), [awayShots, mode])
@@ -353,8 +415,16 @@ export function TeamGameShotChart({ awayAbbr, homeAbbr }: TeamGameShotChartProps
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ds-border px-3 py-2">
         <div>
-          <h3 className="text-sm font-semibold">Shot chart · tonight</h3>
-          <p className="text-[10px] text-ds-muted">{modeLabel} · hex heat by zone</p>
+          <h3 className="text-sm font-semibold">Shot chart</h3>
+          <p className="text-[10px] text-ds-muted">
+            {loading
+              ? "Loading shots…"
+              : data
+                ? `${modeLabel} · hex heat by zone · ${
+                    awayShots.length + homeShots.length
+                  } shots`
+                : "No shot coordinates for this game"}
+          </p>
         </div>
         <div className="flex rounded-lg border border-ds-border p-0.5 text-[11px]">
           {(["volume", "accuracy"] as const).map((m) => (

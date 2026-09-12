@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { USE_STAGING_API } from "../api/config"
 import {
-  mockTrendPoints,
   trendPointsFromRows,
   type TrendPoint,
   type TrendStatKey,
@@ -9,29 +8,19 @@ import {
 import { resolveNbaPlayerId } from "../api/nbaIds"
 import { fetchPlayerSeasonTrends } from "../api/stagingClient"
 
-/** Vault trends enabled for Tatum first; expand once validated. */
-const VAULT_TREND_PLAYER_IDS = new Set([
-  "player-tatum",
-  "1628369",
-  "nba-1628369",
-])
-
-function vaultTrendsEnabled(playerId: string, nbaId: string | null): boolean {
-  if (!nbaId) return false
-  return VAULT_TREND_PLAYER_IDS.has(playerId) || VAULT_TREND_PLAYER_IDS.has(nbaId)
+/* Trends were gated to an allow-list of one player (Tatum); every other player got a
+ * hash-seeded career arc. `player_season_stats` covers everyone, so the gate is gone. */
+function vaultTrendsEnabled(_playerId: string, nbaId: string | null): boolean {
+  return Boolean(nbaId)
 }
 
 function resolveTrendPoints(
-  playerId: string,
   rows: Record<string, unknown>[] | null,
   fromApi: boolean,
   statKey: TrendStatKey,
 ): TrendPoint[] {
-  if (fromApi && rows?.length) {
-    const parsed = trendPointsFromRows(rows, statKey)
-    if (parsed.length) return parsed
-  }
-  return mockTrendPoints(playerId, statKey)
+  if (fromApi && rows?.length) return trendPointsFromRows(rows, statKey)
+  return []
 }
 
 export function useStagingPlayerSeasonTrends(playerId: string) {
@@ -65,11 +54,11 @@ export function useStagingPlayerSeasonTrends(playerId: string) {
   }, [nbaId, vaultEnabled])
 
   const pts = useMemo(
-    () => resolveTrendPoints(playerId, rows, fromApi, "PTS"),
+    () => resolveTrendPoints(rows, fromApi, "PTS"),
     [playerId, rows, fromApi],
   )
   const ast = useMemo(
-    () => resolveTrendPoints(playerId, rows, fromApi, "AST"),
+    () => resolveTrendPoints(rows, fromApi, "AST"),
     [playerId, rows, fromApi],
   )
 

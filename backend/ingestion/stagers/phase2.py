@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from ingestion.config import RAW_TABLE_DIRS, STAGING_ROOT
-from ingestion.stagers._helpers import season_type_from_slug
+from ingestion.stagers._helpers import season_type_from_slug, normalize_team_identity
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ def _stage_game_logs(root: Path, out_name: str) -> Path:
 
     combined = pd.concat(frames, ignore_index=True)
     STAGING_ROOT.mkdir(parents=True, exist_ok=True)
+    combined = normalize_team_identity(combined)
     combined.to_parquet(out_path, index=False)
     logger.info("wrote %s (%s rows, %s cols)", out_path, len(combined), len(combined.columns))
     return out_path

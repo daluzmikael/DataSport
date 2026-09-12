@@ -41,15 +41,18 @@ DATABASE
 SLICE COLUMNS (filter in WHERE; exact string match)
 - season: e.g. '2024-25' (hyphenated). Career rows use season = 'CAREER' when present.
 - season_type: 'Regular Season' or 'Playoffs'
-- per_mode: PerGame, Totals, Per100Possessions, Per36, Per40, …
-- measure_type: Base, Advanced, Usage, Misc, Scoring, Defense (season dash tables)
+- per_mode: PerGame or Totals ONLY on the staged season tables
 - pt_measure_type: Drives, Passing, … (tracking tables)
+- There is NO measure_type column on player_season_stats / team_season_stats.
+  Filtering on it is a binder error. The advanced dash slices were folded in as
+  COLUMNS on 2026-08-19, so one row already carries box score + advanced together.
 
 TABLE PICKING
 - Player season box score / leaderboards / player comparisons → player_season_stats
-  (default measure_type = 'Base', per_mode = 'PerGame')
-- Advanced metrics (TS%, USG%, NET_RATING, PIE) → player_season_stats
-  WHERE measure_type = 'Advanced' AND per_mode = 'PerGame'
+  (per_mode = 'PerGame')
+- Advanced metrics (TS_PCT, USG_PCT, NET_RATING, PIE, PACE) → player_season_stats,
+  same row, no measure_type filter: SELECT PLAYER_NAME, TS_PCT, USG_PCT, PIE ...
+  WHERE season = '…' AND season_type = '…' AND per_mode = 'PerGame'
 - NBA estimated impact (E_NET_RATING, …) → player_estimated_metrics
 - Player tracking (drives, passing, …) → player_tracking WHERE pt_measure_type = '…'
 - 5-man lineups → lineups WHERE group_quantity = 5
@@ -73,8 +76,8 @@ SEASON MAPPING
 - Bare start year "2020" → season = '2020-21'
 - Playoffs: season_type = 'Playoffs'; regular: season_type = 'Regular Season'
 - Per-game stats: per_mode = 'PerGame'; season totals: per_mode = 'Totals'
-- Per-100-poss: per_mode = 'Per100Possessions'
-- Always set measure_type for season dash queries (default 'Base' for box score)
+- Per36 / Per40 / Per100Possessions are NOT staged — only PerGame and Totals exist.
+- Never filter measure_type on the season tables; the column is not there.
 - Clutch columns are prefixed clutch_ (already on player_season_stats / team_season_stats)
 - Hustle columns are prefixed hustle_
 

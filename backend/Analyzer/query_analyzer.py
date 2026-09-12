@@ -1834,10 +1834,25 @@ def analyze_question_with_data(question: str, df: pd.DataFrame) -> str:
         return f"Error during AI analysis: {str(e)}"
 
 
-_BUNDLE_CHAR_CAP = int(os.getenv("ANALYST_BUNDLE_CHAR_CAP", "48000"))
-# Rows are now column-pruned via the router's stat_focus, so a season span or a
+# ~4 chars per token, so 360k chars ~ 90k tokens — enough to carry _BUNDLE_ROW_CAP
+# pruned rows. This is the real binding limit: at the old 48k it did not matter what
+# the row cap said, because ~160 pruned rows already exhausted the character budget.
+_BUNDLE_CHAR_CAP = int(os.getenv("ANALYST_BUNDLE_CHAR_CAP", "360000"))
+# Rows are column-pruned via the router's stat_focus, so a season span or a
 # leaderboard can be shown in full without blowing the character budget.
-_BUNDLE_ROW_CAP = int(os.getenv("ANALYST_BUNDLE_ROW_CAP", "30"))
+#
+# Sizing note (measured 2026-08-18 with tiktoken o200k_base against this vault):
+# a stat_focus-pruned row costs ~68-74 tokens; an unpruned player_season_stats row
+# costs ~690 because that table is 162 columns wide. Pruning is worth ~10x, so the
+# cap below is expressed in PRUNED rows.
+#
+#   1,000 rows  ~   66k tokens   safe on a 128k-context mini model
+#   1,622 rows  ~  107k tokens   LeBron's full career game log — already tight
+#   5,000 rows  ~  330k tokens   needs a large-context model
+#
+# 1200 keeps a 128k-context model inside its window with room for the prompt and
+# the answer. Raise ANALYST_BUNDLE_ROW_CAP for a large-context demo model.
+_BUNDLE_ROW_CAP = int(os.getenv("ANALYST_BUNDLE_ROW_CAP", "1200"))
 
 
 # Columns always worth showing: they identify the row and its slice.
@@ -1846,7 +1861,16 @@ _IDENTITY_COLUMNS = (
     "GROUP_NAME", "TEAM_ABBREVIATION", "team_abbreviation", "TeamCity",
     "season", "season_type", "per_mode", "pt_measure_type", "measure_type",
     "GAME_DATE", "MATCHUP", "WL", "GP", "MIN", "W", "L", "W_PCT", "AGE",
+    # Phase 7-9 tables name their subject differently, and leaving these out stripped
+    # the names out of the rows entirely: "Who is the tallest player?" came back as
+    # *"The tallest player is 7-7 (91.0 inches)"* with no player in the answer.
+    "DISPLAY_FIRST_LAST", "PLAYER", "TEAM_FULL_NAME", "DESCRIPTION",
+    "play_type", "type_grouping", "COURT_STATUS", "NUM", "POSITION",
 )
+
+# Any column whose name ends this way identifies WHO a row is about. A pruned bundle
+# that lost its subject is not a smaller answer, it is an anonymous one.
+_IDENTITY_SUFFIXES = ("_NAME", "NAME", "_FIRST_LAST")
 
 
 def _select_analyst_columns(df: pd.DataFrame, stat_focus: list[str]) -> pd.DataFrame:
@@ -1867,6 +1891,10 @@ def _select_analyst_columns(df: pd.DataFrame, stat_focus: list[str]) -> pd.DataF
         real = lookup.get(col.lower())
         if real and real not in keep:
             keep.append(real)
+    for real in available:
+        upper = real.upper()
+        if real not in keep and any(upper.endswith(s) for s in _IDENTITY_SUFFIXES):
+            keep.append(real)
 
     for col in stat_focus:
         real = lookup.get(col.lower())
@@ -1883,6 +1911,56 @@ def _select_analyst_columns(df: pd.DataFrame, stat_focus: list[str]) -> pd.DataF
     return df[keep]
 
 
+def _is_single_game(df: pd.DataFrame) -> bool:
+    cols = {str(c).lower() for c in df.columns}
+    return {"loc_x", "loc_y", "shot_made_flag"} <= cols and len(df) <= 60
+
+
+def _looks_like_shot_chart(df: pd.DataFrame) -> bool:
+    """Either form the shot-chart query returns: binned cells, or shot-by-shot rows."""
+    cols = {str(c).lower() for c in df.columns}
+    binned = {"hex_col", "hex_row", "made", "total"} <= cols
+    raw = {"loc_x", "loc_y", "shot_made_flag"} <= cols
+    return binned or raw
+
+
+def _shot_chart_text(label: str, df: pd.DataFrame) -> str:
+    """Zone attempts and accuracy, computed in pandas.
+
+    Every figure here is an aggregate over the complete frame, so it belongs to the same
+    class as COMPUTED TOTALS: the analyst may quote these directly and must not try to
+    derive anything per-shot, because the per-shot rows are deliberately not shown.
+    """
+    from Visualizer.shaping import shot_zone_summary
+
+    zones = shot_zone_summary(df)
+    attempts = int(sum(z["fga"] for z in zones))
+    made = int(sum(z["fgm"] for z in zones))
+    pct = (made / attempts * 100) if attempts else 0.0
+
+    lines = [
+        f"BUNDLE {label} — SHOT LOCATIONS (aggregated; individual shots are not listed)",
+        f"Total: {made:,} of {attempts:,} field goals made ({pct:.1f}%)",
+        "By zone:",
+    ]
+    for z in zones:
+        lines.append(
+            f"  {z['zone']:<24} {z['fga']:>6,} FGA   {z['fg_pct'] * 100:>5.1f}%"
+        )
+    lines.append(
+        "A shot chart of these locations is displayed with this answer. Describe WHERE "
+        "the shots come from and which zones are efficient; do not list coordinates."
+    )
+    if _is_single_game(df):
+        # The season and season_type on the plan were guessed around the date and the
+        # query ignored them — so the answer must not cite them either.
+        lines.append(
+            "These rows are ONE GAME. Cite it by its date, and do not describe it as a "
+            "season or attribute it to a season type."
+        )
+    return chr(10).join(lines)
+
+
 def _serialize_bundles_for_analyst(
     bundles: dict[str, pd.DataFrame],
     stat_focus: list[str] | None = None,
@@ -1896,18 +1974,53 @@ def _serialize_bundles_for_analyst(
     total_chars = 0
 
     for label, df in ordered:
+        # A shot-chart bundle is hex cells, not readable rows. Handing the model
+        # ~1,300 rows of grid coordinates would spend the whole budget on numbers it
+        # cannot interpret, so it gets the zone breakdown the chart is built from.
+        if _looks_like_shot_chart(df):
+            parts.append(_shot_chart_text(label, df))
+            continue
+
         narrowed = _select_analyst_columns(df, stat_focus or [])
-        display = _rename_columns_for_display(narrowed.head(_BUNDLE_ROW_CAP))
+
+        # `df` here is the COMPLETE result frame. Any shortening below is a display
+        # decision, and it has to be announced — the previous version reported the
+        # already-truncated length as "Rows returned", so the analyst believed a
+        # 1,622-row career was 200 rows and answered from the first 2.5 seasons.
+        true_rows = int(getattr(df, "attrs", {}).get("true_row_count", df.shape[0]))
+        shown = narrowed
+        note = ""
+        if len(narrowed) > _BUNDLE_ROW_CAP:
+            # Keep both ends: the head carries the earliest rows, the tail the most
+            # recent, and a career trend needs to see both.
+            head = narrowed.head(_BUNDLE_ROW_CAP // 2)
+            tail = narrowed.tail(_BUNDLE_ROW_CAP - len(head))
+            shown = pd.concat([head, tail])
+            note = (
+                f" — SAMPLE ONLY: showing the first {len(head)} and last {len(tail)}"
+                f" of {len(narrowed):,} rows. Use the COMPUTED TOTALS block for any"
+                f" figure covering the whole set."
+            )
+        elif true_rows > df.shape[0]:
+            note = (
+                f" — the query returned {df.shape[0]:,} of {true_rows:,} matching rows."
+            )
+
+        display = _rename_columns_for_display(shown)
         block = (
             f"=== TABLE BUNDLE: {label} ===\n"
-            f"Rows returned: {df.shape[0]} (showing up to {_BUNDLE_ROW_CAP});"
-            f" columns shown: {display.shape[1]} of {df.shape[1]}\n"
+            f"Matching rows: {true_rows:,}; rows printed below: {len(display):,};"
+            f" columns shown: {display.shape[1]} of {df.shape[1]}{note}\n"
             f"{display.to_string(index=False)}\n"
         )
         if total_chars + len(block) > _BUNDLE_CHAR_CAP:
             remaining = _BUNDLE_CHAR_CAP - total_chars
             if remaining > 200:
-                parts.append(block[:remaining] + "\n... [truncated]\n")
+                parts.append(
+                    block[:remaining]
+                    + "\n... [display truncated at the character budget — the COMPUTED "
+                      "TOTALS block above still covers every row]\n"
+                )
             break
         parts.append(block)
         total_chars += len(block)
@@ -1915,10 +2028,31 @@ def _serialize_bundles_for_analyst(
     return "\n".join(parts)
 
 
+def _name_correction_note(plan: Any) -> str:
+    """Tell the analyst when the name it read is not the name that was typed.
+
+    A silently-corrected misspelling is indistinguishable from a correct match, so a
+    wrong resolution reads exactly like a right one. Naming the player actually read
+    costs one clause and makes the substitution checkable.
+    """
+    corrections = getattr(plan, "name_corrections", None) or []
+    if not corrections:
+        return ""
+    pairs = "; ".join(
+        f"asked for {c.get('asked')!r}, read {c.get('used')!r}" for c in corrections
+    )
+    return (
+        "NAME SUBSTITUTION - " + pairs + ". Open your answer by naming the player you "
+        "actually read and noting it differs from what was asked, in one short clause, "
+        "then answer normally.\n"
+    )
+
+
 def analyze_bundled_data(
     question: str,
     bundles: dict[str, pd.DataFrame],
     plan: Any,
+    chart_hint: str | None = None,
 ) -> str:
     """
     Analyze the row bundle returned by the router pipeline (Call 2).
@@ -1940,12 +2074,74 @@ def analyze_bundled_data(
     per_modes = ", ".join(plan.per_modes) if is_plan and plan.per_modes else "PerGame"
     topic = (plan.topic if is_plan else None) or "general"
     citation = plan.citation() if is_plan else f"table={table}"
+    # An exact GAME_DATE overrides the season slice in the query — the season and
+    # season_type on the plan were only guesses around the date, and Tatum's 30 April
+    # 2021 game was cited as "season_type=Playoffs" when it was a regular-season night.
+    _game_date = next(
+        (
+            str(f.get("value", "")).strip()
+            for f in (getattr(plan, "row_filters", None) or [])
+            if str(f.get("column", "")).upper() == "GAME_DATE"
+            and str(f.get("op", "")) == "eq"
+            and str(f.get("value", "")).strip()
+        ),
+        None,
+    )
+    if _game_date:
+        citation = " | ".join(
+            [p for p in citation.split(" | ")
+             if not p.strip().startswith(("seasons=", "season_type=", "per_mode="))]
+            + [f"game_date={_game_date}"]
+        )
 
     is_comparison = len(entities) >= 2
     is_leaderboard = is_plan and plan.is_leaderboard()
+    applied_floor = getattr(plan, "applied_floor", None) if is_plan else None
+
+    # A ranking that was silently filtered answers a different question than the one
+    # asked, so the threshold travels with the rows and the analyst is told to say it.
+    applied_floors = (getattr(plan, "applied_floors", None) if is_plan else None) or (
+        [applied_floor] if applied_floor else []
+    )
+    if applied_floors:
+        parts = []
+        for f in applied_floors:
+            origin = (
+                "requested by the user"
+                if f.get("source") == "user"
+                else "the default minimum for this table"
+            )
+            parts.append(f"{f['phrase']} ({f['column']} >= {f['value']:g}), {origin}")
+        floor_line = (
+            "Qualifying thresholds APPLIED to these rows: "
+            + "; ".join(parts)
+            + ". Players below them were excluded before ranking. State EVERY threshold "
+            "in your answer.\n"
+        )
+    else:
+        floor_line = ""
+
+    # A "career" figure for anyone who debuted before 1996-97 is a partial career, and
+    # nothing in the rows reveals that. Checked against player_bio.FROM_YEAR rather
+    # than left to the prompt — see Analyzer/coverage.py.
+    from Analyzer.coverage import truncated_career_note
+
+    coverage_line = (
+        truncated_career_note(
+            list(entities or []),
+            getattr(plan, "season_from", None) if is_plan else None,
+        )
+        or ""
+    )
+
     is_trend = is_plan and plan.is_multi_season()
 
     bundle_text = _serialize_bundles_for_analyst(bundles, stat_focus)
+
+    # Arithmetic happens in pandas over the full frames, never in the model.
+    from Analyzer.aggregates import compute_bundle_aggregates
+
+    aggregate_text = compute_bundle_aggregates(bundles, stat_focus, question=question)
 
     system_prompt = (
         "You are an NBA analyst writing for someone who asked a specific statistical "
@@ -1963,12 +2159,43 @@ def analyze_bundled_data(
         "RULES:\n"
         "- Use ONLY numbers present in the rows below. Never estimate, infer a missing "
         "value, or bring in outside knowledge about a player, team, award or event.\n"
+        "- NEVER do arithmetic yourself. Do not add, average, COUNT, or otherwise "
+        "combine values across rows. COUNTING IS ARITHMETIC: how many All-Star "
+        "selections, how many seasons above a threshold, how many players qualify "
+        "— all of those come from COMPUTED TOTALS, never from counting the printed "
+        "rows. Any figure that spans more than one row — a career "
+        "total, a multi-season average, a games count, a peak or a low — must be "
+        "quoted from the COMPUTED TOTALS block, which was calculated in pandas over "
+        "the complete result set. If a figure you want is not in that block and not "
+        "in a single row, say it is not available rather than working it out.\n"
+        "- The printed rows may be a SAMPLE of a larger result. Never describe a "
+        "sample as if it were the whole career, season or league. When the bundle "
+        "header says SAMPLE ONLY, every whole-set figure comes from COMPUTED TOTALS.\n"
         "- If a stat needed to fully answer the question is not in the rows, say plainly "
         "that it is not in the data rather than substituting something else.\n"
+        "- NEVER REPEAT A QUALIFIER THE ROWS DO NOT ESTABLISH. If the question asked for "
+        "the best *rookie*, *sixth man*, *starter*, *defender* or any other role, and no "
+        "column in these rows identifies that role, do NOT call the leader by it. Say "
+        "which stat actually produced the ranking and that the role itself is not "
+        "recorded here. Answering 'the best sixth man was Joel Embiid' from a points "
+        "leaderboard is a false statement, not a shortcut.\n"
+        "- A ranking stat means nothing without a scale. Do not label a rate value good "
+        "or bad — a defensive rating, a true shooting percentage, a pace — unless a "
+        "league average or a rank column is present in the rows to compare it against. "
+        "Report the number and what it ranked, not a verdict you cannot support.\n"
+        "- The vault starts at the 1996-97 season. If the question is about a career or "
+        "an all-time mark and any subject played before 1996-97, say the figures cover "
+        "1996-97 onward only. Michael Jordan's rows are his last four seasons, not his "
+        "career, and presenting them as a career line is wrong.\n"
         "- Blank, null or dash values mean the vault has no value there. Say so; do not "
         "treat them as zero.\n"
         "- Numbers are already in the units of the per_mode shown. Per-game values are "
         "averages; totals are season sums. Do not convert between them.\n"
+        "- MATCH THE VERB TO THE PER MODE. When per_mode is Totals, write 'totalled', "
+        "'scored' or 'finished with' — never 'averaged'. Saying a player 'averaged "
+        "2,491 points' turns a season total into a nonsense per-game figure, and it "
+        "reads as authoritative. Only PerGame, Per36, Per40 and Per100Possessions are "
+        "averages. Pre-1997 seasons are Totals only, so this comes up on every one.\n"
         "- Write about basketball, not about the query. Never mention rows, slices, "
         "bundles, tables, columns or 'the data provided' in the body of the answer — "
         "the reader asked about players, not about a database. The single source line "
@@ -1981,6 +2208,11 @@ def analyze_bundled_data(
         "to one decimal. Never print a value like 44.716667.\n"
         "- Close with one short line citing the source slice you used: season(s), "
         "season type, per mode, and the table name.\n"
+        "- If a qualifying threshold was applied, SAY SO IN THE FIRST LINE, in plain "
+        "words — 'Among players with at least 20 games, X led...'. A ranking that was "
+        "filtered answers a narrower question than the one asked, so the reader has to "
+        "see the cutoff to judge the answer. Never bury it at the end and never omit "
+        "it. If the user chose the threshold themselves, still restate it.\n"
         "- Markdown: bold for key figures, bullets for the numbers section, plain prose "
         "for the context section. No headings, no tables.\n"
     )
@@ -2003,15 +2235,41 @@ def analyze_bundled_data(
             "trajectory rather than walking through every season one by one.\n"
         )
 
+    # The reader can SEE the values, so spending the answer restating them wastes the
+    # one thing prose can do that a picture cannot. Same principle as the rule above
+    # against describing rows and columns, extended to the chart.
+    if chart_hint:
+        system_prompt += (
+            f"\nA {chart_hint} is displayed with this answer.\n"
+            "- Do not re-list values the chart already shows. Name the top result, then "
+            "explain what the SHAPE means — the dip, the crossover, the outlier, the "
+            "cluster, the gap between first and second.\n"
+            "- Refer to what the chart shows; never write 'the chart above', 'the graph' "
+            "or 'as shown'. The reader can see it.\n"
+            "- State every applied threshold once, in the text. It also appears in the "
+            "chart footer, and the two must agree.\n"
+        )
+
     user_prompt = (
         f"Question: {question}\n"
         f"Topic: {topic}\n"
         f"Subjects: {', '.join(entities) or 'league-wide (no named subject)'}\n"
         f"Season(s): {season_label} | Season type: {season_type} | Per mode: {per_modes}\n"
         f"Source table: {table}\n"
-        f"Stats in focus: {', '.join(stat_focus) or 'not narrowed'}\n\n"
-        f"{bundle_text}\n\n"
-        f"Answer using only the rows above. Cite this slice at the end: {citation}"
+        f"Stats in focus: {', '.join(stat_focus) or 'not narrowed'}\n"
+        + floor_line
+        + coverage_line
+        + _name_correction_note(plan)
+        + "\n"
+        + (f"{aggregate_text}\n\n" if aggregate_text else "")
+        + f"{bundle_text}\n\n"
+        + (
+            "Answer using the COMPUTED TOTALS for anything spanning multiple rows, "
+            "and the printed rows for single-row detail. "
+            if aggregate_text
+            else "Answer using only the rows above. "
+        )
+        + f"Cite this slice at the end: {citation}"
     )
 
     try:
@@ -2019,11 +2277,110 @@ def analyze_bundled_data(
 
         raw = analyst_completion(system_prompt, user_prompt)
         formatted = raw.replace("###", "\n\n###").replace("####", "\n\n####")
-        return "\n" + formatted.strip()
+        if not (getattr(plan, "name_corrections", None) or []):
+            try:
+                plan.name_corrections = _substituted_names(question, plan)
+            except Exception:  # noqa: BLE001 — disclosure must never break an answer
+                pass
+        answered = _prefix_name_substitution(formatted.strip(), plan)
+        return "\n" + _with_source_line(answered, citation)
     except LLMNotConfiguredError as exc:
         return f"Error during AI analysis: {exc}"
     except Exception as e:
         return f"Error during AI analysis: {str(e)}"
+
+
+def _prefix_name_substitution(answer: str, plan: Any) -> str:
+    """State any name substitution above the answer, in Python rather than the prompt.
+
+    Asking the model to disclose it does not work: the system prompt forbids preamble
+    and tells it to lead with the answer, so the disclosure is read as throat-clearing
+    and dropped. Prepending here is deterministic, and provenance is not something to
+    leave to sampling — the same reasoning as the source line below.
+    """
+    corrections = getattr(plan, "name_corrections", None) or []
+    if not corrections:
+        return answer
+    notes = "; ".join(
+        f"read **{c.get('used')}** for \"{c.get('asked')}\"" for c in corrections
+    )
+    return f"*Note: {notes}.*\n\n{answer}"
+
+
+def _substituted_names(question: str, plan: Any) -> list[dict]:
+    """Entities whose name is not recognisably what the user typed.
+
+    Computed here rather than upstream because this is the one place that holds both
+    the original question and the final plan — the pipeline mutates the plan through
+    several scope-correction passes, and a value set early does not reliably survive.
+
+    A shortened name is not a substitution: "LeBron" for "LeBron James" and "Steph" for
+    "Stephen Curry" are the resolver working as intended. What matters is a token the
+    user typed that was SILENTLY REPLACED — "Yanis" becoming "Giannis" — because that
+    is the case where a wrong match reads exactly like a right one.
+    """
+    import difflib
+    import re as _re
+    import unicodedata as _ud
+
+    def _norm(v: str) -> str:
+        folded = "".join(
+            ch for ch in _ud.normalize("NFKD", str(v or ""))
+            if not _ud.combining(ch)
+        ).lower()
+        return _re.sub(r"\s+", " ", folded.replace(".", "").replace("'", "")).strip()
+
+    q = _norm(question)
+    if not q:
+        return []
+    q_tokens = [t for t in q.split() if len(t) > 2]
+
+    out: list[dict] = []
+    for name in getattr(plan, "entities", None) or []:
+        tokens = [t for t in _norm(name).split() if len(t) > 2]
+        if not tokens or any(t in q for t in tokens) is False:
+            continue
+        for token in tokens:
+            if token in q:
+                continue
+            near = [
+                w for w in q_tokens
+                if w not in tokens
+                # A prefix is a shortening, not a substitution: "steph" -> "stephen"
+                # and "mike" -> "michael" are the resolver doing its job, and flagging
+                # them turns a helpful expansion into a correction notice on every
+                # nickname. Only a token that genuinely diverges counts.
+                and not token.startswith(w)
+                and not w.startswith(token)
+                and difflib.SequenceMatcher(None, w, token).ratio() >= 0.6
+            ]
+            if near:
+                out.append({"asked": near[0], "used": name})
+                break
+    return out
+
+
+def _with_source_line(answer: str, citation: str) -> str:
+    """Guarantee exactly one, correctly-labelled provenance line.
+
+    The model was asked to write the citation itself and dropped the "Source:" prefix
+    on roughly a third of answers — sometimes emitting a bare `table=... | seasons=...`
+    line, sometimes truncating it mid-word. Provenance is not something to leave to
+    sampling, so the model's attempt is stripped and the real citation appended.
+    """
+    lines = answer.rstrip().split("\n")
+    while lines:
+        tail = lines[-1].strip()
+        if not tail:
+            lines.pop()
+            continue
+        low = tail.lower().lstrip("*_ ")
+        if low.startswith("source:") or low.startswith("table=") or low.startswith("seasons="):
+            lines.pop()
+            continue
+        break
+    body = "\n".join(lines).rstrip()
+    return f"{body}\n\nSource: {citation}"
 
 
 if __name__ == "__main__":

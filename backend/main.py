@@ -19,9 +19,11 @@ logging.getLogger().setLevel(
 
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from functools import lru_cache
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Set
-from DashboardBackend.dashboardInterpreter import interpret_question
+# DashboardBackend is the retired Postgres chart interpreter — importing it pulls in
+# psycopg2 and a schema the vault no longer has. See DASHBOARD_PLAN.md.
 from Analyzer.query_analyzer import analyze_question_with_data, analyze_bundled_data
 from auth import (
     sign_up,
@@ -32,13 +34,16 @@ from auth import (
     list_conversations,
 )
 from Interpreter.interpreter import run_query, debug_query_routing, use_router_pipeline
-from Interpreter.pipeline import run_routed_query
+from Interpreter.pipeline import run_routed_query, EntityAmbiguity, GameLogScopeError
 from Interpreter.sql_builder import bundles_to_records, primary_bundle_for_frontend
+from Visualizer import chart_hint_line, select_charts
 from llm.client import LLMNotConfiguredError
 from openai import OpenAI
 import numpy as np
 import pandas as pd
 import re
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -531,6 +536,30 @@ def _sanitize_history_messages(history: Optional[List[Dict[str, Any]]]) -> List[
     return sanitized
 
 
+def _entity_context_names(history_messages: List[Dict[str, str]]) -> List[str]:
+    """Capitalised multi-word names already used in this thread.
+
+    Feeds the entity resolver so a bare surname keeps referring to whoever the
+    conversation was already about — after "Seth Curry", a later plain "Curry"
+    should not jump to Stephen just because he scored more career points.
+    Most recent turns first, so recency wins.
+    """
+    if not history_messages:
+        return []
+
+    names: List[str] = []
+    seen = set()
+    for msg in reversed(history_messages[-8:]):
+        for match in re.findall(
+            r"\b[A-ZÀ-Ž][\w'’.-]+(?:\s+[A-ZÀ-Ž][\w'’.-]+)+", msg.get("content", "")
+        ):
+            key = match.lower()
+            if key not in seen:
+                seen.add(key)
+                names.append(match)
+    return names[:12]
+
+
 def _extract_explicit_season_start(question: str) -> tuple[Optional[int], bool]:
     q = (question or "").lower()
     is_playoffs = "playoff" in q or "postseason" in q
@@ -573,23 +602,63 @@ def _unsupported_specialty_message(question: str) -> Optional[str]:
     if season_start is None:
         return None
 
-    if is_playoffs:
-        available_playoff_starts = {1998, 2004, *range(2015, 2025)}
-        if season_start not in available_playoff_starts:
-            season_label = f"{season_start}-{str(season_start + 1)[-2:]}"
-            return (
-                f"Hustle/deflections playoff data is not available for {season_label} in this database. "
-                "Available playoff hustle seasons are 1998-99, 2004-05, and 2015-16 through 2024-25."
-            )
+    season_label = f"{season_start}-{str(season_start + 1)[-2:]}"
+    season_type = "Playoffs" if is_playoffs else "Regular Season"
+
+    # Coverage is read from the vault rather than hardcoded. The previous version
+    # pinned playoffs to `range(2015, 2025)`, which went stale the moment 2025-26
+    # was staged and told users a season they could query was unavailable.
+    available = _hustle_seasons(season_type)
+    if not available:
+        return None  # cannot prove absence — let the router try
+    if season_label in available:
         return None
 
-    if season_start < 2015:
-        season_label = f"{season_start}-{str(season_start + 1)[-2:]}"
-        return (
-            f"Hustle/deflections regular-season data is not available for {season_label} in this database. "
-            "Regular-season hustle data starts at 2015-16 and runs through 2025-26."
-        )
-    return None
+    return (
+        f"Hustle stats ({season_type.lower()}) are not available for {season_label} "
+        f"in this database.\n\nAvailable {season_type.lower()} hustle seasons: "
+        f"{_summarize_seasons(available)}."
+    )
+
+
+@lru_cache(maxsize=4)
+def _hustle_seasons(season_type: str) -> frozenset:
+    """Seasons that actually carry non-null hustle data, read from the vault."""
+    try:
+        from Executer.data_backend import get_connection
+
+        rows = get_connection().execute(
+            """
+            SELECT DISTINCT season FROM player_season_stats
+            WHERE season_type = ?
+              AND hustle_deflections IS NOT NULL
+            ORDER BY season
+            """,
+            [season_type],
+        ).fetchall()
+        return frozenset(str(r[0]) for r in rows)
+    except Exception as exc:  # noqa: BLE001 — never block a question on this probe
+        logger.debug("Hustle coverage probe failed: %s", exc)
+        return frozenset()
+
+
+def _summarize_seasons(seasons) -> str:
+    """'2015-16 through 2025-26' rather than listing eleven labels."""
+    ordered = sorted(seasons)
+    if not ordered:
+        return "none"
+    if len(ordered) <= 3:
+        return ", ".join(ordered)
+
+    runs, start, prev = [], ordered[0], ordered[0]
+    for s in ordered[1:]:
+        if int(s[:4]) == int(prev[:4]) + 1:
+            prev = s
+            continue
+        runs.append((start, prev))
+        start = prev = s
+    runs.append((start, prev))
+    return ", ".join(a if a == b else f"{a} through {b}" for a, b in runs)
 
 
 def _build_effective_question_from_history(
@@ -657,18 +726,37 @@ def _build_effective_question_from_history(
 
 @app.post("/api/dashboards")
 async def dashboard_endpoint(request: QueryRequest):
-    result = interpret_question(request.question)
-    if result.get("success"):
-        return result
-    else:
-        print("Error details:", result.get("error"), result.get("details"))
-        raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
+    """Chart generation — not wired to the vault yet. See DASHBOARD_PLAN.md.
+
+    This used to call `DashboardBackend.interpret_question`, which writes Postgres SQL
+    against the old per-season schema (`all_players_regular_2023_2024`) and hands a
+    DuckDB connection to psycopg2. Every request failed — and worse, it closed the
+    SHARED DuckDB connection in its `finally`, so one dashboard request took the entire
+    staging API down until the backend was restarted.
+
+    Failing honestly is strictly better than that. The replacement derives a chart spec
+    from the router plan the analyst already produces, with no second model call and no
+    model-written SQL.
+    """
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "Chart generation is being rebuilt on the router pipeline and is not "
+            "available yet. Ask the same question through /api/analysis for the "
+            "numbers in the meantime."
+        ),
+    )
 
 @app.post("/api/analysis")
 async def analysis_endpoint(
     request: QueryRequest,
     authorization: Optional[str] = Header(default=None),
 ):
+    if not (request.question or "").strip():
+        # A bare ValueError from the router used to reach the catch-all below and
+        # come back as 500 "Analysis failed: Question is empty".
+        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
     try:
         print("----HIT----- /api/analysis")
         print(f"Question: {request.question}")
@@ -739,31 +827,164 @@ async def analysis_endpoint(
         router_plan = None
         table_bundles: Dict[str, Any] = {}
 
+        # Names already mentioned in this thread break ties for a bare surname:
+        # after "Seth Curry", a later plain "Curry" should stay Seth.
+        context_names = _entity_context_names(history_messages)
+
         try:
             if router_mode:
-                table_bundles, router_plan = run_routed_query(effective_question)
+                table_bundles, router_plan = run_routed_query(
+                    effective_question, context_names
+                )
                 query_result = primary_bundle_for_frontend(table_bundles)
             else:
                 query_result = run_query(effective_question)
+        except GameLogScopeError as scope_error:
+            # Not a failure — the user asked the game-log table something only the
+            # season table can answer well. Tell them how to ask it properly.
+            payload = {
+                "success": True,
+                "analysis": scope_error.message,
+                "data": [],
+                "question": analysis_question,
+                "needsNarrowerScope": True,
+            }
+            if _analysis_debug_enabled():
+                payload["debug"] = {"unsupportedReason": "game_log_scope_too_broad"}
+            return payload
+        except EntityAmbiguity as ambiguous:
+            # Ask rather than guess — a confident answer about the wrong player is
+            # worse than one clarifying question.
+            payload = {
+                "success": True,
+                "analysis": ambiguous.message,
+                "data": [],
+                "question": analysis_question,
+                "needsClarification": True,
+                "clarificationOptions": [
+                    [c.canonical for c in r.candidates[:6]] for r in ambiguous.resolutions
+                ],
+            }
+            if _analysis_debug_enabled():
+                payload["debug"] = {
+                    "unsupportedReason": "entity_ambiguous",
+                    "ambiguousQueries": [r.query for r in ambiguous.resolutions],
+                    "contextNames": context_names,
+                }
+            return payload
         except LLMNotConfiguredError as llm_exc:
             raise HTTPException(
                 status_code=503,
                 detail=f"LLM API key not configured for router: {llm_exc}",
             ) from llm_exc
 
-        # Call 1 rejected the question as needing more than one table.
+        # Call 1 rejected the question. The reason decides which answer the user gets —
+        # the old code called everything a multi-table limitation, which told people
+        # asking for true shooting percentage to wait for a feature that would never
+        # help them, and said the same thing to someone typing gibberish.
         if router_mode and router_plan is not None and not getattr(router_plan, "supported", True):
             reason = (getattr(router_plan, "unsupported_reason", "") or "").strip()
-            message = (
-                "That question needs data from more than one table at once, which the "
-                "analyzer can't do yet — multi-table analysis is still a work in progress."
-            )
+
+            if reason.upper().startswith("NOT_BASKETBALL"):
+                # Refused at Call 1, so no analyst call is made and this costs nothing
+                # beyond the routing token spend already incurred.
+                detail = reason.split(":", 1)[-1].strip() if ":" in reason else ""
+                message = (
+                    "I only answer questions about NBA statistics from this vault.\n\n"
+                    "Try something like:\n"
+                    "  • \"What did Nikola Jokic average in 2023-24?\"\n"
+                    "  • \"Who led the league in three-pointers last season?\"\n"
+                    "  • \"Compare Jayson Tatum and Jaylen Brown on scoring.\""
+                )
+                payload = {
+                    "success": True,
+                    "analysis": message,
+                    "data": [],
+                    "question": analysis_question,
+                    "offTopic": True,
+                }
+                if _analysis_debug_enabled():
+                    payload["debug"] = {"unsupportedReason": "not_basketball", "detail": detail}
+                return payload
+
+            if reason.upper().startswith("ROLE_NOT_IN_VAULT"):
+                # "Best sixth man" is not a multi-table problem and never will be — the
+                # vault has no column that says who came off the bench. Saying "wait for
+                # multi-table analysis" promises a feature that would not help.
+                detail = reason.split(":", 1)[-1].strip() if ":" in reason else ""
+                message = (
+                    "The vault records what players DID, not what role they were given, "
+                    "so it can't rank a role it doesn't store.\n\n"
+                    f"{detail}\n\n"
+                    "Two things it can do instead:\n"
+                    "  • the award itself — \"Who won Sixth Man of the Year in 2023-24?\"\n"
+                    "  • the underlying stat, ranked openly — \"Who scored the most points "
+                    "per game in 2023-24?\""
+                )
+                payload = {
+                    "success": True,
+                    "analysis": message,
+                    "data": [],
+                    "question": analysis_question,
+                    "roleUnavailable": True,
+                }
+                if _analysis_debug_enabled():
+                    payload["debug"] = {"unsupportedReason": "role_not_in_vault", "detail": detail}
+                return payload
+
+            if reason.upper().startswith("STAT_NOT_IN_VAULT") or "not in the vault" in reason.lower():
+                # This paragraph used to say TS%, eFG% and PIE existed "only for five-man
+                # lineups and per individual game". The 2026-08-19 restage folded the
+                # advanced dash slices into the season tables as columns, so the
+                # explanation had been contradicting the data for a day.
+                message = (
+                    "That stat isn't in the vault at the level you asked for.\n\n"
+                    f"{reason}\n\n"
+                    "The vault covers 1996-97 onward. Season box score, advanced "
+                    "(true shooting, eFG%, usage, PIE, offensive/defensive/net rating, "
+                    "pace) and clutch splits all live on the season tables. Play-type "
+                    "data starts in 2015-16, tracking in 2013-14, and hustle in 2015-16."
+                )
+                payload = {
+                    "success": True,
+                    "analysis": message,
+                    "data": [],
+                    "question": analysis_question,
+                    "statUnavailable": True,
+                }
+                if _analysis_debug_enabled():
+                    payload["debug"] = {"unsupportedReason": "stat_not_in_vault", "detail": reason}
+                return payload
+
+            # Only call it a multi-table limitation when the router actually said two
+            # tables were needed. This message was also being shown for "Who is the
+            # GOAT?" and "What happened in the 2011 lockout season?", promising a
+            # feature that has nothing to do with why either was refused.
+            multi_table = "table" in reason.lower()
+            if multi_table:
+                message = (
+                    "That question needs data from more than one table at once, which the "
+                    "analyzer can't do yet — multi-table analysis is still a work in progress."
+                )
+                tail = (
+                    "\n\nTry asking about one area at a time — for example season box-score "
+                    "stats on their own, or tracking data on their own."
+                )
+            else:
+                message = "I couldn't answer that one from the vault."
+                tail = (
+                    "\n\nNaming a specific stat and season usually gets there — "
+                    "\"Compare LeBron and Jordan on points and true shooting.\""
+                )
             if reason:
-                message += f"\n\nWhy: {reason}"
-            message += (
-                "\n\nTry asking about one area at a time — for example season box-score "
-                "stats on their own, or tracking data on their own."
-            )
+                # The prefix is a routing code for the API, not something to show a
+                # reader — "Why: NEEDS_GAME_LOOKUP: identifying a game by..." reads
+                # as a leaked internal error.
+                explanation = re.sub(r"^[A-Z][A-Z0-9_]{3,}:\s*", "", reason).strip()
+                if explanation:
+                    nl = chr(10) * 2
+                    message += f"{nl}Why: {explanation[:1].upper()}{explanation[1:]}"
+            message += tail
             payload = {
                 "success": True,
                 "analysis": message,
@@ -793,9 +1014,13 @@ async def analysis_endpoint(
             )
 
         if empty:
+            # The pipeline works out WHICH filter emptied the result and retries once
+            # against the schema before giving up, so prefer its specific explanation
+            # over the old catch-all that covered five different causes identically.
+            specific = getattr(router_plan, "empty_reason", None) if router_plan else None
             payload = {
                 "success": True,
-                "analysis": (
+                "analysis": specific or (
                     "No data was found for this query. This could mean:\n"
                     "- The player or team did not appear in the requested season/playoffs.\n"
                     "- The player or team name may be misspelled or not recognized.\n"
@@ -824,12 +1049,20 @@ async def analysis_endpoint(
                 else []
             )
             tables_payload = bundles_to_records(table_bundles)
+            # Chart choice is a pure function of the plan and the frame, so it costs no
+            # tokens and cannot disagree with the prose. Selected BEFORE the analyst runs
+            # so Call 2 can be told a picture exists and stop transcribing it.
+            charts = select_charts(router_plan, table_bundles)
             analysis_result = analyze_bundled_data(
-                analysis_question, table_bundles, router_plan
+                analysis_question,
+                table_bundles,
+                router_plan,
+                chart_hint=chart_hint_line(charts),
             )
         else:
             clean_data = query_result.replace({np.nan: None}).to_dict(orient="records")
             tables_payload = None
+            charts = []  # the legacy pipeline has no plan to select from
             analysis_result = analyze_question_with_data(analysis_question, query_result)
 
         payload = {
@@ -840,6 +1073,8 @@ async def analysis_endpoint(
         }
         if tables_payload is not None:
             payload["tables"] = tables_payload
+        if charts:
+            payload["charts"] = [c.model_dump() for c in charts]
         if _analysis_debug_enabled():
             debug_info: Dict[str, Any] = {
                 "historyContextApplied": history_context_applied,
@@ -858,9 +1093,15 @@ async def analysis_endpoint(
             payload["debug"] = debug_info
         return payload
 
+    except HTTPException:
+        raise  # already a deliberate, user-facing status
     except Exception as e:
-        print(f"Analysis error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        # Log the detail; do not echo internal exception text back to the client.
+        logger.exception("Analysis failed for question: %s", request.question[:200])
+        raise HTTPException(
+            status_code=500,
+            detail="Analysis failed while processing that question. Please try again.",
+        )
 
 @app.post("/api/signup")
 async def signup_endpoint(request: AuthRequest):

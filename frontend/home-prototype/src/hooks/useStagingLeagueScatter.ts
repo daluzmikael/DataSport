@@ -2,16 +2,12 @@ import { useEffect, useMemo, useState } from "react"
 import { USE_STAGING_API } from "../api/config"
 import {
   DEFAULT_SCATTER_SEASON,
-  mockScatterAstTov,
-  mockScatterPtsMin,
   scatterRowsFromApi,
   type ScatterPointRow,
 } from "../api/playerScatterData"
 import { fetchLeagueScatter } from "../api/stagingClient"
 
-type ScatterKind = "pts-min" | "ast-tov"
-
-function useScatterPair(season: string, xStat: string, yStat: string, kind: ScatterKind) {
+function useScatterPair(season: string, xStat: string, yStat: string) {
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [fromApi, setFromApi] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -40,19 +36,16 @@ function useScatterPair(season: string, xStat: string, yStat: string, kind: Scat
   }, [season, xStat, yStat])
 
   const points: ScatterPointRow[] = useMemo(() => {
-    if (fromApi && rows?.length) {
-      const parsed = scatterRowsFromApi(rows)
-      if (parsed.length) return parsed
-    }
-    return kind === "pts-min" ? mockScatterPtsMin() : mockScatterAstTov()
-  }, [rows, fromApi, kind])
+    if (fromApi && rows?.length) return scatterRowsFromApi(rows)
+    return []
+  }, [rows, fromApi])
 
   return { points, fromApi, loading }
 }
 
 export function useStagingLeagueScatter(season = DEFAULT_SCATTER_SEASON) {
-  const ptsMin = useScatterPair(season, "MIN", "PTS", "pts-min")
-  const astTov = useScatterPair(season, "TOV", "AST", "ast-tov")
+  const ptsMin = useScatterPair(season, "MIN", "PTS")
+  const astTov = useScatterPair(season, "TOV", "AST")
 
   return {
     ptsMin: ptsMin.points,

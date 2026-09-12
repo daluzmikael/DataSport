@@ -2,7 +2,7 @@ import { Library, Search } from "lucide-react"
 import { useMemo, useState } from "react"
 import { USE_STAGING_API } from "../api/config"
 import type { StagingPlayerSearchHit } from "../api/stagingClient"
-import { SEARCHABLE_TEAMS } from "../data/favoritesMock"
+import { entryToProfile, useTeamDirectory } from "../data/teamDirectory"
 import { usePlayerVaultSearch } from "../hooks/usePlayerVaultSearch"
 import { useStagingSeasonList } from "../hooks/useStagingSeasonList"
 import type { FavoriteTeam } from "../types"
@@ -50,14 +50,26 @@ export function PlayerLibraryPage({ onOpenPlayer, onOpenTeam }: PlayerLibraryPag
     mode === "players" ? query : "",
   )
 
+  const directory = useTeamDirectory()
+
   const teamResults = useMemo(() => {
     const q = query.trim()
     if (mode !== "teams" || q.length < 2) return [] as FavoriteTeam[]
-    return SEARCHABLE_TEAMS.filter(
-      (t) =>
-        matchesQuery(t.name, q) || matchesQuery(t.city, q) || matchesQuery(t.abbr, q),
-    )
-  }, [mode, query])
+    return (directory ?? [])
+      .map((entry) => {
+        const profile = entryToProfile(entry, "")
+        return {
+          id: profile.id,
+          abbr: profile.abbr,
+          name: profile.name,
+          city: profile.city,
+        } satisfies FavoriteTeam
+      })
+      .filter(
+        (t) =>
+          matchesQuery(t.name, q) || matchesQuery(t.city, q) || matchesQuery(t.abbr, q),
+      )
+  }, [mode, query, directory])
 
   const showResults = query.trim().length >= 2
   const isPlayers = mode === "players"

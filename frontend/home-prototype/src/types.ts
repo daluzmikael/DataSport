@@ -1,3 +1,5 @@
+import type { ChartSpec } from "./api/chartSpec"
+
 export type NavPage = "analyzer" | "dashboard" | "social" | "favorites" | "players"
 
 export type FollowKind = "team" | "player"
@@ -90,29 +92,24 @@ export interface TeamSeasonGameLogBundle {
   }
 }
 
+/** A team's IDENTITY. Nothing statistical.
+ *
+ * This used to be a 400-line object per team carrying invented season game logs,
+ * season averages, franchise history, rosters and all-time game-score leaders — and
+ * `createStubTeamProfile()` manufactured one for any team that had no fixture, so the
+ * 29 teams nobody had hand-written got convincing numbers too.
+ *
+ * Every statistical field is gone. Stats come from the `useStagingTeam*` hooks, which
+ * read the vault and render an empty state when it has nothing. What is left is the
+ * name of the franchise, which is reference data the vault also supplies.
+ */
 export interface TeamProfile {
   id: string
   abbr: string
   city: string
   name: string
+  /** The season the profile opens on — the latest the vault has for this team. */
   seasonLabel: string
-  seasonGames: {
-    general: TeamSeasonGameRow[]
-    advanced: TeamSeasonGameRow[]
-    per36: TeamSeasonGameRow[]
-    per100: TeamSeasonGameRow[]
-  }
-  seasonAverages: {
-    general: Record<string, string | number>
-    advanced: Record<string, string | number>
-    per36: Record<string, string | number>
-    per100: Record<string, string | number>
-  }
-  history: TeamHistorySeason[]
-  roster: TeamRosterPlayer[]
-  gameScoreLeaders: TeamGameScoreLeader[]
-  accolades: TeamFranchiseAccolades
-  currentSeason: TeamCurrentSeasonSnapshot
 }
 
 export interface LineScore {
@@ -259,4 +256,8 @@ export interface ChatMessage {
   content: string
   /** True while a real API call for this message is in flight. */
   pending?: boolean
+  /** Charts chosen for this answer from the same rows the prose was written over.
+   *  Live-response only — chat history persists role and content, so a reloaded
+   *  conversation shows the text alone. */
+  charts?: ChartSpec[]
 }

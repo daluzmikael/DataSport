@@ -1,0 +1,6 @@
+# Local working notes — not for publication.
+# CLAUDE.md is excluded separately via .git/info/exclude.
+SESSION_BACKLOG.md
+SHOT_CHART_PLAN.md
+DASHBOARD_PLAN.md
+CROSS_TABLE_PLAN.md

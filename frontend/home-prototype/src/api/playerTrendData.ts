@@ -43,37 +43,8 @@ export function trendPointsFromRows(
     })
 }
 
-/** Seeded mock career arc for demo players without vault. */
-export function mockTrendPoints(playerId: string, statKey: TrendStatKey): TrendPoint[] {
-  const seasons = [
-    "2017-18",
-    "2018-19",
-    "2019-20",
-    "2020-21",
-    "2021-22",
-    "2022-23",
-    "2023-24",
-    "2024-25",
-  ]
-  const bases: Record<TrendStatKey, number> = {
-    PTS: 13,
-    AST: 2.5,
-    REB: 5,
-    STL: 0.8,
-    BLK: 0.3,
-  }
-  const slopes: Record<TrendStatKey, number> = {
-    PTS: 1.8,
-    AST: 0.45,
-    REB: 0.5,
-    STL: 0.04,
-    BLK: 0.02,
-  }
-  let h = 0
-  for (const c of playerId) h = (h * 31 + c.charCodeAt(0)) | 0
-  const jitter = (i: number) => ((Math.abs(h + i * 17) % 10) - 5) * 0.15
-  return seasons.map((season, i) => ({
-    season,
-    value: Math.round((bases[statKey] + slopes[statKey] * i + jitter(i)) * 10) / 10,
-  }))
-}
+/* `mockTrendPoints()` generated a career arc from a hash of the player id: a base
+ * value, a fixed slope, and seeded jitter across eight seasons. It produced a
+ * plausible-looking improvement curve for anyone, including players who never played
+ * those seasons. Trends come from `/api/staging/players/{id}/season-trends`. */
+

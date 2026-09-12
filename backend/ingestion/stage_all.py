@@ -83,6 +83,15 @@ from ingestion.stagers.phase6 import (
     stage_team_tracking,
 
 )
+from ingestion.stagers.phase7 import (
+    stage_franchise_history,
+    stage_player_awards,
+    stage_player_bio,
+    stage_team_roster,
+)
+from ingestion.stagers.phase7 import stage_phase7
+from ingestion.stagers.phase9 import stage_phase9, stage_player_shot_chart
+from ingestion.stagers.phase8 import stage_player_synergy, stage_team_synergy, stage_phase8
 
 
 
@@ -99,6 +108,12 @@ PHASE_RUNNERS = {
     "5": run_phase5,
 
     "6": run_phase6,
+
+    "7": stage_phase7,
+
+    "8": stage_phase8,
+
+    "9": stage_phase9,
 
 }
 
@@ -142,6 +157,20 @@ TABLE_STAGERS = {
 
     "team_estimated_metrics": stage_team_estimated_metrics,
 
+    "player_bio": stage_player_bio,
+
+    "team_roster": stage_team_roster,
+
+    "player_awards": stage_player_awards,
+
+    "franchise_history": stage_franchise_history,
+
+    "player_synergy": stage_player_synergy,
+
+    "team_synergy": stage_team_synergy,
+
+    "player_shot_chart": stage_player_shot_chart,
+
 }
 
 
@@ -156,7 +185,7 @@ def main() -> None:
 
         "--phase",
 
-        choices=("1", "2", "3", "4", "5", "6", "all"),
+        choices=("1", "2", "3", "4", "5", "6", "7", "8", "9", "all"),
 
         default="1",
 
@@ -216,7 +245,7 @@ def main() -> None:
 
     elif args.phase == "all":
 
-        for phase in ("1", "2", "3", "4", "5", "6"):
+        for phase in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
 
             logging.info("=== Staging phase %s ===", phase)
 

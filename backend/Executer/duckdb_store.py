@@ -36,10 +36,30 @@ STAGING_VIEWS: dict[str, str] = {
     "player_on_off": "player_on_off",
     "player_estimated_metrics": "player_estimated_metrics",
     "team_estimated_metrics": "team_estimated_metrics",
+    # Phase 7-8. A staged parquet that is not listed here is invisible to the router,
+    # which is the same failure mode that hid player_on_off for months.
+    "player_synergy": "player_synergy",
+    "team_synergy": "team_synergy",
+    "player_bio": "player_bio",
+    "team_roster": "team_roster",
+    "player_awards": "player_awards",
+    "franchise_history": "franchise_history",
+    # Phase 9 — per-shot LOC_X/LOC_Y. Distinct from court_shots (zone grid).
+    "player_shot_chart": "player_shot_chart",
+    # Legacy. The modern dash endpoints stop at 1996-97, which silently truncated every
+    # all-time answer — the career assists leader came back as Chris Paul because
+    # Stockton's 15,806 are mostly outside the window. These two cover what came before.
+    "legacy_season_stats": "legacy_season_stats",
+    "all_time_leaders": "all_time_leaders",
 }
 
+# The single real connection. Never handed out directly — see get_connection().
 _conn: duckdb.DuckDBPyConnection | None = None
 _duck_lock = threading.Lock()
+
+# One cursor per thread, retired whenever the root is rebuilt.
+_local = threading.local()
+_generation = 0
 
 
 def default_staging_dir() -> Path:
@@ -58,11 +78,9 @@ def _escape_path(path: Path) -> str:
     return str(path).replace("\\", "/")
 
 
-def get_connection() -> duckdb.DuckDBPyConnection:
-    """Return a DuckDB connection with views registered over staging parquet files."""
+def _build_root() -> duckdb.DuckDBPyConnection:
+    """Open the one real connection and register every staging view on it."""
     global _conn
-    if _conn is not None:
-        return _conn
 
     staging_dir = default_staging_dir()
     if not staging_dir.is_dir():
@@ -109,9 +127,41 @@ def get_connection() -> duckdb.DuckDBPyConnection:
     return _conn
 
 
+def get_connection() -> duckdb.DuckDBPyConnection:
+    """Return this thread's DuckDB handle onto the staging views.
+
+    A DuckDB connection holds ONE result set. Handing the same connection to every
+    request means a `.execute()` on one thread can land between another thread's
+    `.execute()` and its `.fetchdf()`, and the second thread silently receives the
+    first one's rows — or none at all.
+
+    That is not theoretical. `execute_query` takes `_duck_lock`, but roughly twenty
+    other call sites (`list_registered_tables`, `_columns_for_table`, the router's
+    schema probes, the empty-result diagnosis) execute on the connection directly with
+    no lock. Under two concurrent requests, a player search for LeBron logged
+    `Query OK | rows=0 cols=0` and returned an empty list, while the identical SQL run
+    in isolation returned his row. Nothing errored; the answer was just wrong.
+
+    `.cursor()` is DuckDB's supported answer: it returns an independent connection onto
+    the same in-memory database, with its own result set and full visibility of the
+    views. One per thread, cached — the FastAPI threadpool reuses threads, so this is a
+    handful of cursors, not one per request.
+    """
+    root = _conn if _conn is not None else _build_root()
+
+    cached = getattr(_local, "conn", None)
+    if cached is not None and getattr(_local, "generation", -1) == _generation:
+        return cached
+
+    conn = root.cursor()
+    _local.conn = conn
+    _local.generation = _generation
+    return conn
+
+
 def refresh_views() -> duckdb.DuckDBPyConnection:
-    """Drop cached connection so the next get_connection() re-reads parquet from disk."""
-    global _conn, _schema_cache
+    """Drop cached connections so the next get_connection() re-reads parquet from disk."""
+    global _conn, _schema_cache, _generation
     if _conn is not None:
         try:
             _conn.close()
@@ -119,6 +169,10 @@ def refresh_views() -> duckdb.DuckDBPyConnection:
             pass
     _conn = None
     _schema_cache = {"value": None, "fetched_at": 0.0}
+    # Bumping the generation retires every thread-local cursor without having to reach
+    # into other threads to close them.
+    _generation += 1
+    _build_root()
     return get_connection()
 
 
@@ -281,6 +335,21 @@ def execute_query(
     del timeout_ms  # reserved for future PRAGMA
     logger.info("Executing DuckDB SQL: %s", (sql_query or "")[:600])
     try:
+        with _duck_lock:
+            df = conn.execute(sql_query).fetchdf()
+    except duckdb.ConnectionException as exc:
+        # The cached handle is process-wide, so anything that closes it takes every
+        # later request down with it — and `_conn` stays non-None, so the dead object
+        # is handed out forever. One request to the retired `/api/dashboards` did
+        # exactly this and every read after it returned "Connection already closed"
+        # until the backend was restarted. Rebuild and retry once.
+        #
+        # Recovery lives HERE rather than in `get_connection()` on purpose: a liveness
+        # probe there would run outside `_duck_lock`, and a DuckDB connection holds one
+        # result set at a time. A probe firing mid-query replaced another worker's rows
+        # with its own — a player search returned `[{"1": 1}]`, the probe's answer.
+        logger.warning("DuckDB connection was closed (%s) — rebuilding and retrying", exc)
+        conn = refresh_views()
         with _duck_lock:
             df = conn.execute(sql_query).fetchdf()
     except Exception as exc:

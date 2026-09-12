@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { useStagingTeamHistory } from "../hooks/useStagingTeam"
 import type { TeamProfile } from "../types"
-import { ReferencedLabel } from "./AskReferenceButton"
 import { TeamFranchiseHeader } from "./TeamFranchiseHeader"
 import { TeamOverviewSection } from "./TeamOverviewSection"
 import { TeamRosterSection } from "./TeamRosterSection"
@@ -128,45 +127,6 @@ export function TeamDetail({ profile, liveGameId, onOpenGame, onReference }: Tea
         <div className="space-y-6 pt-6">
           <TeamRosterSection profile={profile} onReference={onReference} />
 
-          <section>
-            <h3 className="mb-2 font-heading text-lg font-semibold">Top game scores</h3>
-            <p className="mb-2 text-[11px] text-ds-muted">
-              Single-game GS · 1996–present (mock)
-            </p>
-            <div className="max-h-[min(360px,42vh)] overflow-auto rounded-lg border border-ds-border">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead className="sticky top-0 z-10 bg-ds-raised">
-                  <tr className="text-[10px] uppercase tracking-wide text-ds-muted">
-                    <th className="px-3 py-2 font-semibold">#</th>
-                    <th className="px-3 py-2 font-semibold">Player</th>
-                    <th className="px-3 py-2 font-semibold">Season</th>
-                    <th className="px-3 py-2 font-semibold">Opp</th>
-                    <th className="px-3 py-2 text-right font-semibold">GS</th>
-                  </tr>
-                </thead>
-                <tbody className="font-mono tabular-nums">
-                  {profile.gameScoreLeaders.map((row) => (
-                    <tr
-                      key={`${row.rank}-${row.player}`}
-                      className="border-b border-ds-border/40 hover:bg-ds-raised/40"
-                    >
-                      <td className="px-3 py-2 text-ds-muted">{row.rank}</td>
-                      <td className="px-3 py-2 font-sans font-medium">
-                        <ReferencedLabel label={row.player} onReference={onReference} />
-                      </td>
-                      <td className="px-3 py-2">{row.season}</td>
-                      <td className="px-3 py-2">
-                        <ReferencedLabel label={row.opponent} onReference={onReference} />
-                      </td>
-                      <td className="px-3 py-2 text-right font-semibold text-ds-accent">
-                        {row.gameScore.toFixed(1)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
         </div>
       )}
     </div>

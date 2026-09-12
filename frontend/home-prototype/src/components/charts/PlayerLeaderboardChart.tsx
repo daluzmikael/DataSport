@@ -12,6 +12,11 @@ interface PlayerLeaderboardChartProps {
   subtitle: string
   statLabel: string
   highlightPlayerId?: string
+  /** Off when a caller renders its own title — AnalystChart owns the header in chat. */
+  showHeader?: boolean
+  /** Vault percentages are fractions, so a 3P% leaderboard reads "0.4" under the
+   *  default. Callers that know the unit pass a formatter. */
+  formatValue?: (value: number) => string
 }
 
 function shortName(fullName: string): string {
@@ -26,6 +31,8 @@ export function PlayerLeaderboardChart({
   subtitle,
   statLabel,
   highlightPlayerId,
+  showHeader = true,
+  formatValue = (v: number) => v.toFixed(1),
 }: PlayerLeaderboardChartProps) {
   if (!entries.length) {
     return (
@@ -42,10 +49,12 @@ export function PlayerLeaderboardChart({
 
   return (
     <div>
-      <div className="mb-2">
-        <h3 className="text-sm font-semibold text-ds-text">{title}</h3>
-        <p className="text-[10px] text-ds-muted">{subtitle}</p>
-      </div>
+      {showHeader && (
+        <div className="mb-2">
+          <h3 className="text-sm font-semibold text-ds-text">{title}</h3>
+          <p className="text-[10px] text-ds-muted">{subtitle}</p>
+        </div>
+      )}
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="h-auto w-full max-w-[520px]"
@@ -65,7 +74,7 @@ export function PlayerLeaderboardChart({
                 y={y}
                 textAnchor="end"
                 dominantBaseline="middle"
-                fill={highlighted ? HIGHLIGHT_COLOR : "rgba(255,255,255,0.75)"}
+                fill={highlighted ? HIGHLIGHT_COLOR : "var(--color-ds-text)"}
                 fontSize={10}
                 fontWeight={highlighted ? 700 : 500}
                 fontFamily="DM Sans, sans-serif"
@@ -76,7 +85,7 @@ export function PlayerLeaderboardChart({
                 x={4}
                 y={y}
                 dominantBaseline="middle"
-                fill="rgba(255,255,255,0.35)"
+                fill="var(--color-ds-muted)"
                 fontSize={8}
                 fontFamily="DM Sans, sans-serif"
               >
@@ -95,13 +104,13 @@ export function PlayerLeaderboardChart({
                 x={PAD.left + bw + 6}
                 y={y}
                 dominantBaseline="middle"
-                fill="rgba(255,255,255,0.65)"
+                fill="var(--color-ds-muted)"
                 fontSize={9}
                 fontFamily="DM Sans, sans-serif"
               >
-                {entry.value.toFixed(1)}
+                {formatValue(entry.value)}
               </text>
-              <title>{`${entry.playerName} (${entry.teamAbbr}) · ${statLabel}: ${entry.value}`}</title>
+              <title>{`${entry.playerName} (${entry.teamAbbr}) · ${statLabel}: ${formatValue(entry.value)}`}</title>
             </g>
           )
         })}

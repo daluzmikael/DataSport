@@ -75,15 +75,15 @@ export function TeamFranchiseHeader({ profile, onReference }: TeamFranchiseHeade
             Accolades
           </p>
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
-            <StatCell label="Championships" value={accolades.championships} accent />
-            <StatCell label="Conference titles" value={accolades.conferenceTitles} />
-            <StatCell label="Last championship" value={accolades.lastChampionship} />
-            <StatCell label="Last playoffs" value={accolades.lastPlayoffs} />
+            <StatCell label="Championships" value={accolades?.championships ?? "—"} accent />
+            <StatCell label="Conference titles" value={accolades?.conferenceTitles ?? "—"} />
+            <StatCell label="Last championship" value={accolades?.lastChampionship ?? "—"} />
+            <StatCell label="Last playoffs" value={accolades?.lastPlayoffs ?? "—"} />
             <StatCell label="In association">
               <p className="mt-0.5 font-mono text-base font-bold leading-tight tabular-nums text-ds-text sm:text-lg">
-                Since {accolades.founded}
+                Since {accolades?.founded ?? "—"}
               </p>
-              <p className="text-[11px] text-ds-muted">{accolades.yearsInAssociation} seasons</p>
+              <p className="text-[11px] text-ds-muted">{accolades?.yearsInAssociation ?? "—"} seasons</p>
             </StatCell>
           </div>
         </div>

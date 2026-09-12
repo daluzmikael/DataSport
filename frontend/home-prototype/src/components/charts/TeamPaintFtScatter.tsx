@@ -1,5 +1,5 @@
-import type { ScatterPoint } from "../../data/teamGameChartsMock"
-import { teamChartColor } from "../../data/teamGameChartsMock"
+import type { ScatterPoint } from "../../data/schema/charts"
+import { teamChartColor } from "../../data/schema/charts"
 
 const W = 420
 const H = 260

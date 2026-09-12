@@ -2,7 +2,7 @@ import type { ReactNode } from "react"
 import {
   buildPaintFtScatter,
   buildTeamCompareRadar,
-} from "../../data/teamGameChartsMock"
+} from "../../data/schema/charts"
 import { TeamCompareRadar } from "./TeamCompareRadar"
 import { TeamPaintFtScatter } from "./TeamPaintFtScatter"
 
@@ -12,6 +12,10 @@ const CHART_HINT =
 interface TeamGameChartsSectionProps {
   awayAbbr: string
   homeAbbr: string
+  /** Raw player rows from the game box score. */
+  players: Record<string, unknown>[]
+  /** Team totals keyed by tricode, from the game box score. */
+  teamTotals: Record<string, Record<string, unknown>>
 }
 
 function ChartCard({
@@ -40,22 +44,29 @@ function ChartCard({
 export function TeamGameChartsSection({
   awayAbbr,
   homeAbbr,
+  players,
+  teamTotals,
 }: TeamGameChartsSectionProps) {
-  const scatter = buildPaintFtScatter(awayAbbr, homeAbbr)
-  const radar = buildTeamCompareRadar(awayAbbr, homeAbbr)
+  // Both charts used to be built from invented box scores. They now take the same
+  // real rows the box-score tables above them render.
+  const scatter = buildPaintFtScatter(players)
+  const radar = buildTeamCompareRadar(
+    { abbr: awayAbbr, totals: teamTotals[awayAbbr.toUpperCase()] ?? {} },
+    { abbr: homeAbbr, totals: teamTotals[homeAbbr.toUpperCase()] ?? {} },
+  )
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <ChartCard
         title="Paint points vs free throw attempts"
-        subtitle={`Tonight · ${awayAbbr} & ${homeAbbr} players`}
+        subtitle={`${awayAbbr} & ${homeAbbr} players`}
       >
         <TeamPaintFtScatter points={scatter} awayAbbr={awayAbbr} homeAbbr={homeAbbr} />
       </ChartCard>
 
       <ChartCard
         title="Team skill profile"
-        subtitle={`Live game comparison · ${awayAbbr} vs ${homeAbbr}`}
+        subtitle={`${awayAbbr} vs ${homeAbbr}`}
       >
         <TeamCompareRadar data={radar} awayAbbr={awayAbbr} homeAbbr={homeAbbr} />
       </ChartCard>

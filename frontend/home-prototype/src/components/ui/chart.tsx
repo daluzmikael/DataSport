@@ -43,7 +43,7 @@ export function ChartContainer({
         {...props}
       >
         <ResponsiveContainer width="100%" height={height}>
-          {children}
+          {children as React.ReactElement}
         </ResponsiveContainer>
       </div>
     </ChartContext.Provider>

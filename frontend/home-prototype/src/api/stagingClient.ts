@@ -527,3 +527,241 @@ export async function fetchTeamLeaders(
     min_gp: minGp,
   })
 }
+
+// ---------------------------------------------------------------------------
+// Phase 7-9 reads. These are what let the prototype drop its mock modules:
+// accolades, physicals, franchise honours, jersey numbers and shot coordinates
+// were all hand-written fixtures because no endpoint served them.
+// ---------------------------------------------------------------------------
+
+export interface PlayerBio extends Record<string, unknown> {
+  PERSON_ID?: number
+  DISPLAY_FIRST_LAST?: string
+  HEIGHT?: string
+  HEIGHT_INCHES?: number | null
+  WEIGHT?: string
+  POSITION?: string
+  JERSEY?: string
+  BIRTHDATE?: string
+  COUNTRY?: string
+  SCHOOL?: string
+  DRAFT_YEAR?: string
+  DRAFT_ROUND?: string
+  DRAFT_NUMBER?: string
+  SEASON_EXP?: number
+  FROM_YEAR?: string
+  TO_YEAR?: string
+  GREATEST_75_FLAG?: string
+}
+
+export async function fetchPlayerBio(playerId: string) {
+  return stagingGet<PlayerBio | null>(`/api/staging/players/${playerId}/bio`)
+}
+
+export interface AwardRow extends Record<string, unknown> {
+  DESCRIPTION?: string
+  SEASON?: string
+  TEAM?: string
+  ALL_NBA_TEAM_NUMBER?: string
+}
+
+export interface AwardSummaryEntry {
+  description: string
+  count: number
+  seasons: string[]
+  periodic: boolean
+}
+
+export interface PlayerAwardsPayload {
+  data: AwardRow[]
+  summary: AwardSummaryEntry[]
+}
+
+export async function fetchPlayerAwards(
+  playerId: string,
+): Promise<PlayerAwardsPayload | null> {
+  const full = await stagingGetFull<AwardRow[]>(`/api/staging/players/${playerId}/awards`)
+  if (!full) return null
+  const summary = (full as unknown as { summary?: AwardSummaryEntry[] }).summary ?? []
+  return { data: Array.isArray(full.data) ? full.data : [], summary }
+}
+
+export interface FranchiseRow extends Record<string, unknown> {
+  TEAM_ID?: number
+  TEAM_CITY?: string
+  TEAM_NAME?: string
+  TEAM_FULL_NAME?: string
+  START_YEAR?: string
+  END_YEAR?: string
+  YEARS?: number
+  GAMES?: number
+  WINS?: number
+  LOSSES?: number
+  WIN_PCT?: number
+  PO_APPEARANCES?: number
+  DIV_TITLES?: number
+  CONF_TITLES?: number
+  LEAGUE_TITLES?: number
+}
+
+export interface FranchisePayload {
+  overall: FranchiseRow | null
+  eras: FranchiseRow[]
+}
+
+export async function fetchTeamFranchise(teamId: string): Promise<FranchisePayload | null> {
+  const full = await stagingGetFull<FranchiseRow | null>(
+    `/api/staging/teams/${teamId}/franchise`,
+  )
+  if (!full) return null
+  const eras = (full as unknown as { eras?: FranchiseRow[] }).eras ?? []
+  return { overall: full.data ?? null, eras }
+}
+
+export interface ShotChartMeta {
+  attempts?: number
+  made?: number
+  fg_pct?: number | null
+  truncated?: boolean
+}
+
+export interface ShotChartPayload {
+  rows: Record<string, unknown>[]
+  meta: ShotChartMeta
+}
+
+/** Per-shot LOC_X / LOC_Y. Distinct from `fetchPlayerShotZones`, which is the
+ *  aggregated zone grid and carries no coordinates at all. */
+export async function fetchPlayerShotChart(
+  playerId: string,
+  season: string,
+  seasonType = "Regular Season",
+  options?: { gameId?: string },
+): Promise<ShotChartPayload | null> {
+  const params: Record<string, string> = { season, season_type: seasonType }
+  if (options?.gameId) params.game_id = options.gameId
+  const full = await stagingGetFull<Record<string, unknown>[]>(
+    `/api/staging/players/${playerId}/shot-chart`,
+    params,
+  )
+  if (!full) return null
+  return {
+    rows: Array.isArray(full.data) ? full.data : [],
+    meta: (full.meta ?? {}) as ShotChartMeta,
+  }
+}
+
+export async function fetchPlayerShotChartSeasons(
+  playerId: string,
+  seasonType = "Regular Season",
+) {
+  return stagingGet<Array<{ season: string; attempts: number }>>(
+    `/api/staging/players/${playerId}/shot-chart-seasons`,
+    { season_type: seasonType },
+  )
+}
+
+export async function fetchTeamRosterDetail(teamId: string, season: string) {
+  return stagingGet<Record<string, unknown>[]>(
+    `/api/staging/teams/${teamId}/roster-detail`,
+    { season },
+  )
+}
+
+export interface TeamDirectoryEntry {
+  team_id: string
+  team_full_name: string
+  abbr: string
+  nickname: string
+  city: string
+}
+
+export async function fetchTeamsDirectory(season?: string) {
+  return stagingGet<TeamDirectoryEntry[]>(
+    "/api/staging/teams",
+    season ? { season } : undefined,
+  )
+}
+
+export interface BoardSide {
+  team_id: string
+  abbr: string
+  name: string
+  score: number | null
+  wl: string | null
+  line: Record<string, number>
+  stats: Record<string, string | number | null>
+}
+
+export interface BoardGame {
+  game_id: string
+  game_date: string
+  season: string
+  status: string
+  away: BoardSide
+  home: BoardSide
+}
+
+export async function fetchGameDates(
+  options?: { season?: string; seasonType?: string; limit?: number },
+) {
+  const params: Record<string, string | number> = {
+    season_type: options?.seasonType ?? "Regular Season",
+    limit: options?.limit ?? 14,
+  }
+  if (options?.season) params.season = options.season
+  return stagingGet<Array<{ game_date: string; games: number }>>(
+    "/api/staging/games/dates",
+    params,
+  )
+}
+
+export async function fetchGamesByDate(date: string, seasonType = "Regular Season") {
+  return stagingGet<BoardGame[]>("/api/staging/games/by-date", {
+    date,
+    season_type: seasonType,
+  })
+}
+
+export interface GameLeader {
+  player_id: string
+  name: string
+  team: string
+  value: number | null
+}
+
+export async function fetchGameLeaders(nbaGameId: string) {
+  return stagingGet<{
+    points: GameLeader[]
+    assists: GameLeader[]
+    rebounds: GameLeader[]
+  }>(`/api/staging/games/${nbaGameId}/leaders`)
+}
+
+export interface GameShotPlayer {
+  player_id: string
+  name: string
+  team_id: string
+  team_name: string
+  attempts: number
+  made: number
+}
+
+export interface GameShotChartPayload {
+  rows: Record<string, unknown>[]
+  players: GameShotPlayer[]
+}
+
+/** Every shot in one game, both teams. One read instead of one per player. */
+export async function fetchGameShotChart(
+  nbaGameId: string,
+): Promise<GameShotChartPayload | null> {
+  const full = await stagingGetFull<Record<string, unknown>[]>(
+    `/api/staging/games/${nbaGameId}/shot-chart`,
+  )
+  if (!full) return null
+  return {
+    rows: Array.isArray(full.data) ? full.data : [],
+    players: (full as unknown as { players?: GameShotPlayer[] }).players ?? [],
+  }
+}

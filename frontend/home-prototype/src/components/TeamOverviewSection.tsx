@@ -4,7 +4,7 @@ import {
   useStagingTeamSeasonSnapshot,
   useTeamVaultSeason,
 } from "../hooks/useStagingTeam"
-import type { TeamLeaderStatId, TeamSeasonLeaderEntry } from "../data/teamSeasonLeadersMock"
+import type { TeamLeaderStatId, TeamSeasonLeaderEntry } from "../data/schema/teamLeaders"
 import type { TeamProfile } from "../types"
 import { ReferencedLabel } from "./AskReferenceButton"
 import { StagingBadge } from "./StagingBadge"
@@ -118,11 +118,11 @@ export function TeamOverviewSection({ profile, onReference }: TeamOverviewSectio
         <div className="mb-4 h-px w-full bg-ds-border" />
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           <KeyStat label="Record" value={snapshot.record} />
-          <KeyStat label="PPG" value={averages.pts} />
-          <KeyStat label="RPG" value={averages.reb} />
-          <KeyStat label="APG" value={averages.ast} />
-          <KeyStat label="FG%" value={averages.fg_pct} />
-          <KeyStat label="3P%" value={averages.fg3_pct} />
+          <KeyStat label="PPG" value={averages?.pts ?? "—"} />
+          <KeyStat label="RPG" value={averages?.reb ?? "—"} />
+          <KeyStat label="APG" value={averages?.ast ?? "—"} />
+          <KeyStat label="FG%" value={averages?.fg_pct ?? "—"} />
+          <KeyStat label="3P%" value={averages?.fg3_pct ?? "—"} />
         </div>
       </div>
     </div>

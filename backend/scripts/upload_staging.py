@@ -65,6 +65,19 @@ def report(files: list[Path], staging_dir: Path) -> int:
     if missing:
         print(f"\nNot staged yet: {', '.join(missing)}")
 
+    # Parquet sitting in staging that no view claims. These are not uploaded, so a
+    # table added to ingestion but not to STAGING_VIEWS would otherwise reach
+    # production as an empty feature with nothing in the logs to say why.
+    unregistered = sorted(
+        path for path in staging_dir.glob("*.parquet") if path.stem not in STAGING_VIEWS
+    )
+    if unregistered:
+        skipped = sum(path.stat().st_size for path in unregistered)
+        print(f"\nIn staging but not in STAGING_VIEWS, so NOT uploaded ({_human(skipped)}):")
+        for path in unregistered:
+            print(f"  {path.stem}  ({_human(path.stat().st_size)})")
+        print("  Add the stem to STAGING_VIEWS if the deployed API should read it.")
+
     total_gb = total / (1024**3)
     print(f"\nCloudflare R2 free tier is {FREE_TIER_GB:g} GB.")
     if total_gb <= FREE_TIER_GB:

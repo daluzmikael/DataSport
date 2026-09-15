@@ -46,7 +46,7 @@ python -m scripts.upload_staging --dry-run
 
 This prints a per-table size breakdown, the total, and whether it fits in 10 GB.
 Tables are listed smallest to largest, so the trim candidates are at the bottom
-(`court_shots` and the per-game tables are usually the largest by a wide margin).
+(`lineups` and the per-game tables are usually the largest by a wide margin).
 
 If it does not fit, narrow `START_SEASON` in `ingestion/config.py` and re-stage, or
 skip a phase entirely — the API degrades gracefully, registering views only for the

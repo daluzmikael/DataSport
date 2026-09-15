@@ -240,6 +240,20 @@ cd DataSport\backend
 python -m scripts.upload_staging --dry-run
 ```
 
+### Trying the hosted version
+
+The backend runs on Render's free tier, which sleeps after 15 minutes without
+traffic. The first request after an idle stretch takes roughly a minute while the
+service wakes and DuckDB re-registers its views against R2 — a slow first load is
+the service starting, not a broken page. Requests after that run at normal speed.
+Analyst answers additionally wait on two LLM calls.
+
+Warming the API before you open the UI avoids the wait:
+
+```bash
+curl https://datasport-api.onrender.com/healthz
+```
+
 ## Further Reading
 
 - `backend/ingestion/README.md` — pull phases, staging, data layout

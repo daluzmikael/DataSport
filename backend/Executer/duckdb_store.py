@@ -30,6 +30,9 @@ STAGING_VIEWS: dict[str, str] = {
     "team_game_advanced": "team_game_advanced",
     "player_career": "player_career",
     "court_shots": "court_shots",
+    # Shot-level detail (6.3M rows). Registered so it stages and uploads; the
+    # router cannot reach it until it gains a table_catalog.yaml entry.
+    "player_shot_chart": "player_shot_chart",
     "player_tracking": "player_tracking",
     "team_tracking": "team_tracking",
     "lineups": "lineups",

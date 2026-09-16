@@ -57,11 +57,13 @@ parquet files that exist.
 Create a bucket in the Cloudflare dashboard (R2 → Create bucket), then an R2 API
 token with **Object Read & Write** scoped to it. Note the Account ID.
 
+The upload needs `boto3`, which is in `requirements.txt` (workstation only —
+the server reads from R2 and never uploads, so it is not in the Render image).
+
 ```powershell
 $env:R2_ACCOUNT_ID="<account id>"
 $env:S3_ACCESS_KEY_ID="<access key id>"
 $env:S3_SECRET_ACCESS_KEY="<secret access key>"
-pip install boto3
 python -m scripts.upload_staging --bucket datasport-vault --prefix staging
 ```
 

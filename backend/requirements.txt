@@ -18,3 +18,4 @@ pyrebase4
 firebase-admin
 sqlglot
 pytest
+boto3

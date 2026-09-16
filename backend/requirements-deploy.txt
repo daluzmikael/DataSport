@@ -8,25 +8,31 @@
 #   firebase-admin - unused; auth goes through pyrebase's REST client
 #   flask, flask-cors - superseded by FastAPI
 #   pytest         - test-only
+#   boto3          - upload_staging runs on the workstation; the server only reads
+#
+# Versions are pinned to the workstation venv so a redeploy months from now builds
+# the same service rather than silently picking up new majors. PYTHON_VERSION in
+# render.yaml is pinned to the same interpreter for the same reason. To refresh,
+# upgrade locally, retest, then copy the new versions here.
 
-fastapi
-uvicorn
-pydantic
-python-dotenv
-requests
+fastapi==0.136.3
+uvicorn==0.48.0
+pydantic==2.13.4
+python-dotenv==1.2.2
+requests==2.34.2
 
 # Data layer
-duckdb
-pandas
-numpy
-pyarrow
-sqlglot
-psycopg2-binary  # imported at module load by DashboardBackend and Executer.query_bot
+duckdb==1.5.3
+pandas==3.0.3
+numpy==2.4.6
+pyarrow==24.0.0
+sqlglot==30.8.0
+psycopg2-binary==2.9.12  # imported at module load by DashboardBackend and Executer.query_bot
 
 # LLM providers
-openai
-anthropic
-pyyaml
+openai==2.40.0
+anthropic==0.116.0
+pyyaml==6.0.3
 
 # Auth + saved chat history
-pyrebase4
+pyrebase4==4.9.0

@@ -18,8 +18,11 @@ services:
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     envVars:
+      # Matched to the workstation venv, and fully qualified as Render requires.
+      # Render's own default drifts (3.14.3 for services created from Feb 2026), so
+      # leaving this unset would build on an interpreter nothing has been tested on.
       - key: PYTHON_VERSION
-        value: "3.13.4"
+        value: "3.11.8"
 
       # --- Data layer -------------------------------------------------------
       - key: DATA_BACKEND

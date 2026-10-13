@@ -462,6 +462,20 @@ def _should_apply_history_context(question: str) -> bool:
     q = (question or "").strip().lower()
     if not q:
         return False
+    # Judge only the user's question when it arrives wrapped with prior context.
+    if "current question:" in q:
+        q = q.rsplit("current question:", 1)[1].strip()
+
+    # A comparison that names its own subjects ("who is better LeBron 2012 or KD
+    # 2015") is self-contained even though "who is better" / "offensively" are also
+    # follow-up markers. Without a pronoun pointing back, prior turns only add noise.
+    tokens = re.findall(r"\w+", q)
+    if (
+        len(tokens) >= 7
+        and re.search(r"\b(compare|vs\.?|versus|or)\b", q)
+        and not re.search(r"\b(he|she|him|her|his|hers|they|them|their|it|its|that|those)\b", q)
+    ):
+        return False
 
     # Only inject history for likely follow-up/ellipsis prompts.
     followup_markers = [

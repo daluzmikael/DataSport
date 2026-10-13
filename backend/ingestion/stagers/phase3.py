@@ -13,7 +13,7 @@ from ingestion.stagers._helpers import concat_parquet_files_batched, normalize_t
 logger = logging.getLogger(__name__)
 
 
-def _enrich_game_id(df: pd.DataFrame, path: Path) -> None:
+def enrich_game_id(df: pd.DataFrame, path: Path) -> None:
     df.insert(0, "game_id", path.stem.zfill(10))
 
 
@@ -27,7 +27,7 @@ def _stage_game_advanced(root: Path, out_name: str) -> Path:
     row_count = concat_parquet_files_batched(
         parquet_files,
         out_path,
-        enrich=_enrich_game_id,
+        enrich=enrich_game_id,
         batch_size=500,
         log_label=out_name,
     )
@@ -49,25 +49,17 @@ def stage_team_game_advanced() -> Path:
     )
 
 
-def stage_game_context() -> Path:
-    root = RAW_TABLE_DIRS["game_context"]
-    out_path = STAGING_ROOT / "game_context.parquet"
-    json_files = sorted(root.glob("*.json"))
-    if not json_files:
-        logger.warning("no game context JSON to stage")
-        return out_path
-
+def game_context_frame(json_files: list[Path]) -> pd.DataFrame | None:
+    """Long-format rows (game_id, dataset, ...) for the given game_context JSON files."""
     frames: list[pd.DataFrame] = []
     batch: list[pd.DataFrame] = []
     batch_size = 2000
-
     for i, json_path in enumerate(json_files, start=1):
         try:
             payload = json.loads(json_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             logger.warning("skip invalid JSON %s", json_path)
             continue
-
         game_id = str(payload.get("game_id") or json_path.stem).zfill(10)
         datasets = payload.get("datasets") or {}
         for dataset_key, records in datasets.items():
@@ -79,7 +71,6 @@ def stage_game_context() -> Path:
             df.insert(0, "dataset", str(dataset_key))
             df.insert(0, "game_id", game_id)
             batch.append(df)
-
         if len(batch) >= batch_size:
             frames.append(pd.concat(batch, ignore_index=True))
             batch = []
@@ -87,14 +78,24 @@ def stage_game_context() -> Path:
 
     if batch:
         frames.append(pd.concat(batch, ignore_index=True))
-
     if not frames:
-        logger.warning("no game context records to stage")
+        return None
+    return normalize_team_identity(pd.concat(frames, ignore_index=True))
+
+
+def stage_game_context() -> Path:
+    root = RAW_TABLE_DIRS["game_context"]
+    out_path = STAGING_ROOT / "game_context.parquet"
+    json_files = sorted(root.glob("*.json"))
+    if not json_files:
+        logger.warning("no game context JSON to stage")
         return out_path
 
-    combined = pd.concat(frames, ignore_index=True)
+    combined = game_context_frame(json_files)
+    if combined is None:
+        logger.warning("no game context records to stage")
+        return out_path
     STAGING_ROOT.mkdir(parents=True, exist_ok=True)
-    combined = normalize_team_identity(combined)
     combined.to_parquet(out_path, index=False)
     logger.info("wrote %s (%s rows, %s cols)", out_path, len(combined), len(combined.columns))
     return out_path

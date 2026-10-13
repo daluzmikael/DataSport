@@ -16,6 +16,23 @@ pip install -r requirements.txt
 python -m ingestion.pull_all --phase all --log-file
 ```
 
+## In-season refresh (nightly / weekly)
+
+One command pulls everything new for the season being played and stages it:
+
+```powershell
+python -m scripts.update_vault                       # current season, all tables (~1-2 h)
+python -m scripts.update_vault --skip shots,lineups  # quicker nightly run
+python -m scripts.update_vault --weekly              # + awards, franchise history, all-time leaders
+python -m scripts.update_vault --dry-run             # show what would be re-pulled
+```
+
+`pull_all` alone will not refresh a season in progress: the checkpoint marks each
+slice completed and skips it forever. `update_vault` un-marks the current season's
+slices (and the careers of players in it), pulls only games not fetched yet, stages
+all phases, then calls `POST /api/staging/refresh` on a local API if one is running.
+Logs go to `data/logs/update_vault_*.log`.
+
 ## Phases
 
 | Phase | Tables | Notes |

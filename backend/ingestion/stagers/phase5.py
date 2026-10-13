@@ -12,7 +12,7 @@ from ingestion.stagers._helpers import concat_parquet_files_batched, season_type
 logger = logging.getLogger(__name__)
 
 
-def _enrich_court_shot(df: pd.DataFrame, path: Path) -> None:
+def enrich_court_shot(df: pd.DataFrame, path: Path) -> None:
     # layout: court_shots/{season}/{regular_season|playoffs}/{player_id}.parquet
     df.insert(0, "player_id", path.stem)
     df.insert(0, "season_type", season_type_from_slug(path.parent.name))
@@ -30,7 +30,7 @@ def stage_court_shots() -> Path:
     row_count = concat_parquet_files_batched(
         parquet_files,
         out_path,
-        enrich=_enrich_court_shot,
+        enrich=enrich_court_shot,
         batch_size=1000,
         log_label="court_shots",
     )

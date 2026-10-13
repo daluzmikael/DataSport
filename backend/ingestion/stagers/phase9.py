@@ -30,6 +30,33 @@ _KEEP = [
 ]
 
 
+def shot_chart_season_frame(season_dir: Path) -> pd.DataFrame | None:
+    """All shots for one season folder (<season>/<regular_season|playoffs>/<player>.parquet)."""
+    files = sorted(season_dir.rglob("*.parquet"))
+    parts = []
+    for path in files:
+        try:
+            df = pd.read_parquet(path)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("unreadable %s (%s)", path, exc)
+            continue
+        if df.empty:
+            continue
+        if "season" not in df.columns:
+            df["season"] = season_dir.name
+        if "season_type" not in df.columns:
+            slug = path.parent.name
+            df["season_type"] = (
+                "Regular Season" if slug == "regular_season" else "Playoffs"
+            )
+        parts.append(df[[c for c in _KEEP if c in df.columns]])
+    if not parts:
+        return None
+    frame = pd.concat(parts, ignore_index=True)
+    logger.info("shot_chart %s: %s rows", season_dir.name, len(frame))
+    return frame
+
+
 def stage_player_shot_chart() -> Path:
     root = Path(RAW_TABLE_DIRS["player_shot_chart"])
     out_path = STAGING_ROOT / "player_shot_chart.parquet"
@@ -39,30 +66,9 @@ def stage_player_shot_chart() -> Path:
 
     season_frames: list[pd.DataFrame] = []
     for season_dir in sorted(p for p in root.iterdir() if p.is_dir()):
-        files = sorted(season_dir.rglob("*.parquet"))
-        if not files:
-            continue
-        parts = []
-        for path in files:
-            try:
-                df = pd.read_parquet(path)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("unreadable %s (%s)", path, exc)
-                continue
-            if df.empty:
-                continue
-            if "season" not in df.columns:
-                df["season"] = season_dir.name
-            if "season_type" not in df.columns:
-                # <season>/<regular_season|playoffs>/<player>.parquet
-                slug = path.parent.name
-                df["season_type"] = (
-                    "Regular Season" if slug == "regular_season" else "Playoffs"
-                )
-            parts.append(df[[c for c in _KEEP if c in df.columns]])
-        if parts:
-            season_frames.append(pd.concat(parts, ignore_index=True))
-            logger.info("shot_chart %s: %s rows", season_dir.name, len(season_frames[-1]))
+        frame = shot_chart_season_frame(season_dir)
+        if frame is not None:
+            season_frames.append(frame)
 
     if not season_frames:
         logger.warning("no player_shot_chart data to stage")

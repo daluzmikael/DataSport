@@ -8,12 +8,6 @@ import {
 import { resolveNbaPlayerId } from "../api/nbaIds"
 import { fetchPlayerSeasonTrends } from "../api/stagingClient"
 
-/* Trends were gated to an allow-list of one player (Tatum); every other player got a
- * hash-seeded career arc. `player_season_stats` covers everyone, so the gate is gone. */
-function vaultTrendsEnabled(_playerId: string, nbaId: string | null): boolean {
-  return Boolean(nbaId)
-}
-
 function resolveTrendPoints(
   rows: Record<string, unknown>[] | null,
   fromApi: boolean,
@@ -25,7 +19,7 @@ function resolveTrendPoints(
 
 export function useStagingPlayerSeasonTrends(playerId: string) {
   const nbaId = resolveNbaPlayerId(playerId)
-  const vaultEnabled = vaultTrendsEnabled(playerId, nbaId)
+  const vaultEnabled = Boolean(nbaId)
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [fromApi, setFromApi] = useState(false)
   const [loading, setLoading] = useState(false)

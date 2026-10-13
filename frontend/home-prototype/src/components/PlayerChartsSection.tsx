@@ -53,6 +53,9 @@ export function PlayerChartsSection({
   const [tab, setTab] = useState<ChartTab>("profile")
   const { seasons, season, setSeason, loading: seasonsLoading, isCareer } =
     usePlayerShotChartSeasons(playerId)
+  // League-wide charts follow the season picker; "Career" falls back to their defaults.
+  const leaderboardSeason = isCareer || !season ? DEFAULT_LEADERBOARD_SEASON : season
+  const scatterSeason = isCareer || !season ? DEFAULT_SCATTER_SEASON : season
   const { shots, fromApi: shotsFromApi, loading: shotsLoading } = useStagingPlayerShotCharts(
     playerId,
     season,
@@ -76,13 +79,13 @@ export function PlayerChartsSection({
     entries: scoringLeaders,
     fromApi: leadersFromApi,
     loading: leadersLoading,
-  } = useStagingLeagueLeaderboard(playerId)
+  } = useStagingLeagueLeaderboard(playerId, leaderboardSeason)
   const {
     ptsMin: ptsMinScatter,
     astTov: astTovScatter,
     fromApi: scatterFromApi,
     loading: scatterLoading,
-  } = useStagingLeagueScatter()
+  } = useStagingLeagueScatter(scatterSeason)
   const highlightNbaId = resolveNbaPlayerId(playerId)
 
   const seasonLabel = isCareer ? "Career" : `${season} season`
@@ -108,9 +111,9 @@ export function PlayerChartsSection({
   const ptsTrendPlaceholder = `Ask AI more, e.g. ${shortName} PPG trend from 2017 to 2025`
   const astTrendPlaceholder = `Ask AI more, e.g. ${shortName} assists trend vs Jaylen Brown 2017-2025`
   const leaderboardPlaceholder = `Ask AI more, e.g. Show me the top 10 scorers in 2023`
-  const ptsMinScatterPlaceholder = `Ask AI more, e.g. Scatterplot of points per game vs minutes for ${DEFAULT_SCATTER_SEASON}`
-  const astTovScatterPlaceholder = `Ask AI more, e.g. Plot assists per game vs turnovers per game in ${DEFAULT_SCATTER_SEASON}`
-  const scatterTimeFrame = `${DEFAULT_SCATTER_SEASON} regular season · min 20 GP`
+  const ptsMinScatterPlaceholder = `Ask AI more, e.g. Scatterplot of points per game vs minutes for ${scatterSeason}`
+  const astTovScatterPlaceholder = `Ask AI more, e.g. Plot assists per game vs turnovers per game in ${scatterSeason}`
+  const scatterTimeFrame = `${scatterSeason} regular season · min 20 GP`
 
   return (
     <section className="rounded-xl border border-ds-border bg-ds-panel p-4">
@@ -290,7 +293,7 @@ export function PlayerChartsSection({
             <PlayerLeaderboardChart
               entries={scoringLeaders}
               title={`League leaders: ${LEADERBOARD_STAT_LABELS.PTS}`}
-              subtitle={`${DEFAULT_LEADERBOARD_SEASON} regular season · min 20 GP`}
+              subtitle={`${leaderboardSeason} regular season · min 20 GP`}
               statLabel={LEADERBOARD_STAT_LABELS.PTS}
               highlightPlayerId={highlightNbaId ?? undefined}
             />

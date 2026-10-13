@@ -1,31 +1,20 @@
-/** Live-game state — deliberately empty, because there is no live source yet.
+/** Live-game state, filled from the NBA live feed (`/api/live/*`).
  *
  * The app has surfaces that only make sense for a game in progress: a pulsing LIVE
- * badge, a game clock, possession, timeouts remaining, a running play-by-play. Those
- * were filled by `mock.ts` with one Celtics–Heat game frozen at Q3 5:46, and by
- * `otherLiveGamesMock.ts` with four more, complete with invented play-by-play strings.
- * Every number on the home screen was fiction, and it looked exactly like the real
- * vault numbers next to it.
- *
- * The live endpoints (`/api/live/*`, step 6 of the ingestion roadmap) do not exist. So
- * rather than fabricate a game, this module returns nothing and the live surfaces show
- * their empty state. The finished games in the right-hand board are real — see
- * `hooks/useVaultGameBoard.ts`.
- *
- * When the live API lands, this is the one file that has to change: fill `LIVE_FEED`
- * from `/api/live/scoreboard` and the rest of the app already knows what to do.
+ * badge, a game clock, a live box score. Those used to be filled by `mock.ts` with
+ * one Celtics–Heat game frozen at Q3 5:46. Now `hooks/useLiveBoard.ts` polls the live
+ * endpoints, writes today's games into `LIVE_FEED` and registers each game's detail
+ * in `liveRegistry`. Until the first answer arrives (or when the API is unreachable)
+ * everything here is empty and the live surfaces show their empty state; the
+ * finished games from the vault still come from `hooks/useVaultGameBoard.ts`.
  */
 import type { GameDetailView, LiveFeedItem } from "../types"
+import { getLiveGameDetail } from "./liveRegistry"
 
-/** Games in progress right now. Empty until `/api/live/*` exists. */
+/** Today's games from the live feed. Mutated in place by `useLiveBoard`. */
 export const LIVE_FEED: LiveFeedItem[] = []
 
-/** Full detail for a live game. No live source, so nothing to return. */
-export function getGameDetail(_gameId: string): GameDetailView | undefined {
-  return undefined
+/** Full detail for a game the live feed has registered. */
+export function getGameDetail(gameId: string): GameDetailView | undefined {
+  return getLiveGameDetail(gameId)
 }
-
-/** Play-by-play for a live game. Requires `playbyplayv3`, which is not wired. */
-export const PLAY_BY_PLAY: Record<string, string[]> = {}
-
-export const HAS_LIVE_SOURCE = false

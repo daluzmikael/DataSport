@@ -361,8 +361,10 @@ export function ShotChartCourt({
           let size: number
 
           if (mode === "volume") {
-            colorVal = bin.total / maxVal
-            size = HEX_RADIUS * (0.5 + 0.5 * (bin.total / maxVal))
+            // Log scale: real seasons have one rim hex with ~10x the next one, which
+            // would leave every other hex near-black on a linear scale.
+            colorVal = Math.log1p(bin.total) / Math.log1p(maxVal)
+            size = HEX_RADIUS * (0.5 + 0.5 * colorVal)
           } else if (mode === "accuracy") {
             colorVal = Math.min(1, Math.max(0, bin.pct / 0.9))
             size = HEX_RADIUS * (0.5 + 0.5 * Math.min(1, bin.total / Math.max(maxVal * 0.3, 1)))

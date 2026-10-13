@@ -8,18 +8,26 @@ export function StagingConnectionBar() {
 
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let attempt = 0
+    // Keep retrying: a cold-starting (or reloading) backend answers a few seconds
+    // later, and a one-shot check left the "offline" banner up for good.
+    const check = async () => {
       const health = await fetchStagingHealth()
       if (cancelled) return
       if (health?.tables?.length) {
         setStatus("ok")
         setTables(health.tables)
-      } else {
-        setStatus("offline")
+        return
       }
-    })()
+      setStatus("offline")
+      attempt += 1
+      timer = setTimeout(check, Math.min(3000 * attempt, 15000))
+    }
+    void check()
     return () => {
       cancelled = true
+      if (timer) clearTimeout(timer)
     }
   }, [])
 
@@ -39,8 +47,12 @@ export function StagingConnectionBar() {
         </>
       ) : (
         <>
-          Vault offline — using mock data. Start backend:{" "}
-          <code className="font-mono">uvicorn main:app --port 8000</code>
+          Connecting to the stats vault… showing sample data until it responds.
+          {import.meta.env.DEV && (
+            <>
+              {" "}Start backend: <code className="font-mono">uvicorn main:app --port 8000</code>
+            </>
+          )}
         </>
       )}
     </div>

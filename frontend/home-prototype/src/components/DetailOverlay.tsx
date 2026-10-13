@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { GameLogTab } from "../data/schema/teamBox"
 import { getGameDetail, LIVE_FEED } from "../data/liveState"
 import { teamProfileIdFromAbbr, useTeamProfile } from "../data/teamDirectory"
+import { getLiveBoxRows, getLiveTeamTotals } from "../data/liveRegistry"
 import type { DetailTarget, GameDetailView } from "../types"
 import { TeamDetail } from "./TeamDetail"
 import { TeamGameChartsSection } from "./charts/TeamGameChartsSection"
@@ -371,7 +372,15 @@ export function DetailOverlay({
             onAsk={focusAskBar}
           />
         )}
-        {stagingGameDetail && stagingGameNbaId && (
+        {gameDetail && (
+          <LiveGameDetail
+            game={gameDetail}
+            onOpenPlayerGame={onOpenPlayerGame}
+            onOpenTeam={onOpenTeam}
+            onReference={onReference}
+          />
+        )}
+        {!gameDetail && stagingGameDetail && stagingGameNbaId && (
           <StagingGameDetail
             game={stagingGameDetail}
             gameOverlayId={stagingGameOverlayId(stagingGameNbaId)}
@@ -508,6 +517,58 @@ function StagingGameDetail({
         homeAbbr={game.home.abbr}
         gameId={gameOverlayId}
       />
+    </div>
+  )
+}
+
+/** A game from the NBA live feed (`/api/live`): scoreboard and box scores only. */
+function LiveGameDetail({
+  game,
+  onOpenPlayerGame,
+  onOpenTeam,
+  onReference,
+}: {
+  game: GameDetailView
+  onOpenPlayerGame: (playerId: string, gameId: string) => void
+  onOpenTeam: (teamId: string) => void
+  onReference: (label: string) => void
+}) {
+  const [statsTab, setStatsTab] = useState<GameLogTab>("general")
+  const liveBoxSubtitle = getLiveBoxRows(game.id, game.home.abbr, "general")
+    ? `${game.isLive ? "Live" : "Final"} box score · NBA live feed`
+    : undefined
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-4">
+      <GameScoreboard
+        game={game}
+        statsTab={statsTab}
+        onStatsTabChange={setStatsTab}
+        onOpenTeam={(abbr) => onOpenTeam(teamProfileIdFromAbbr(abbr))}
+        onReference={onReference}
+        isFinal={liveBoxSubtitle != null && !game.isLive}
+        statTabs={liveBoxSubtitle ? ["general", "advanced"] : undefined}
+        awayTeamValues={getLiveTeamTotals(game.id, game.away.abbr, statsTab)}
+        homeTeamValues={getLiveTeamTotals(game.id, game.home.abbr, statsTab)}
+      />
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+        <TeamBoxScoreTable
+          teamAbbr={game.away.abbr}
+          tab={statsTab}
+          rows={getLiveBoxRows(game.id, game.away.abbr, statsTab)}
+          subtitle={liveBoxSubtitle}
+          onOpenPlayer={(playerId) => onOpenPlayerGame(playerId, game.id)}
+          onReference={onReference}
+        />
+        <TeamBoxScoreTable
+          teamAbbr={game.home.abbr}
+          tab={statsTab}
+          rows={getLiveBoxRows(game.id, game.home.abbr, statsTab)}
+          subtitle={liveBoxSubtitle}
+          onOpenPlayer={(playerId) => onOpenPlayerGame(playerId, game.id)}
+          onReference={onReference}
+        />
+      </div>
     </div>
   )
 }

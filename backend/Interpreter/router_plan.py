@@ -459,6 +459,11 @@ class RouterPlan(BaseModel):
     supported: bool = True
     unsupported_reason: str | None = None
 
+    def is_off_topic(self) -> bool:
+        return not self.supported and (self.unsupported_reason or "").strip().upper().startswith(
+            "NOT_BASKETBALL"
+        )
+
     entity_type: Literal["player", "team", "league"] = "player"
     entities: list[str] = Field(default_factory=list)
 

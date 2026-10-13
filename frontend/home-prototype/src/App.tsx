@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { LIVE_FEED } from "./data/liveState"
+import { useLiveBoard } from "./hooks/useLiveBoard"
 import { postAnalysis } from "./api/analysisClient"
+import { MOCK_PLAYER_NBA_IDS } from "./api/nbaIds"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
 import { ConversationProvider, useConversation } from "./contexts/ConversationContext"
 import { AnalyzerPanel } from "./components/AnalyzerPanel"
@@ -15,6 +17,18 @@ import { PlaceholderPage } from "./components/PlaceholderPage"
 import { StagingConnectionBar } from "./components/StagingConnectionBar"
 import type { ChatMessage, DetailTarget, NavPage } from "./types"
 
+/**
+ * Prototype aliases (`player-jokic`) only carry demo data. Unless the player is on
+ * tonight's live feed (real live line), open the real vault profile instead.
+ */
+function normalizeDetailTarget(target: DetailTarget): DetailTarget {
+  if (target?.type !== "player") return target
+  const nbaId = MOCK_PLAYER_NBA_IDS[target.id]
+  if (!nbaId) return target
+  const onLiveFeed = LIVE_FEED.some((i) => i.kind === "followed-player" && i.id === target.id)
+  return onLiveFeed ? target : { ...target, id: `nba-${nbaId}` }
+}
+
 function AppShell() {
   const { user } = useAuth()
   const [loggedIn, setLoggedIn] = useState(!!user)
@@ -24,15 +38,20 @@ function AppShell() {
   // The chat opens empty. `SAMPLE_MESSAGES` seeded it with a scripted exchange that
   // read as a real answer the user had never asked for.
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [detail, setDetail] = useState<DetailTarget>(null)
+  const [detail, setDetailRaw] = useState<DetailTarget>(null)
+  const setDetail = useCallback(
+    (target: DetailTarget) => setDetailRaw(normalizeDetailTarget(target)),
+    [],
+  )
   const [closingDetail, setClosingDetail] = useState(false)
   const [contextHint, setContextHint] = useState<string | null>(null)
   const [askDraft, setAskDraft] = useState("")
   const [referenceFocusKey, setReferenceFocusKey] = useState(0)
   const { createConversation, saveMessage } = useConversation()
-  // Empty until the live endpoints exist — see data/liveState.ts. The board below it
-  // shows real finished games from the vault.
-  const liveFeed = useMemo(() => LIVE_FEED, [])
+  // Compact conversation state from the last /api/analysis reply (entities,
+  // seasons, stat focus). Sent back each turn so follow-ups resolve cheaply.
+  const convStateRef = useRef<unknown>(undefined)
+  const liveBoard = useLiveBoard()
 
   const handleReference = useCallback((label: string) => {
     setAskDraft((prev) => {
@@ -79,7 +98,8 @@ function AppShell() {
       await saveMessage(userMsg)
 
       try {
-        const result = await postAnalysis(text, history)
+        const result = await postAnalysis(text, history, convStateRef.current)
+        if (result.conversationState) convStateRef.current = result.conversationState
         const assistantMsg: ChatMessage = {
           id: pendingId,
           role: "assistant",
@@ -172,7 +192,11 @@ function AppShell() {
         </div>
 
         <div className="h-full w-[360px] shrink-0 border-l border-ds-border">
-          <LiveDashboard liveItems={liveFeed} onOpenDetail={setDetail} />
+          <LiveDashboard
+            sections={liveBoard.sections}
+            updatedAt={liveBoard.updatedAt}
+            onOpenDetail={setDetail}
+          />
         </div>
 
         <ChatSidebar
@@ -180,6 +204,7 @@ function AppShell() {
           folders={[]}
           activeId={activeThread}
           onSelect={(id) => {
+            convStateRef.current = undefined
             setActiveThread(id)
             setChatsOpen(false)
           }}

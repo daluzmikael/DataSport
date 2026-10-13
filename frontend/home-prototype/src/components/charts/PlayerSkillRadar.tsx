@@ -5,6 +5,9 @@ const CX = SIZE / 2
 const CY = SIZE / 2
 const R = 100
 const LEVELS = 4
+/** Extra room around the plot so axis labels at the edges are not clipped. */
+const PAD = 36
+const VIEWBOX = `${-PAD} 0 ${SIZE + PAD * 2} ${SIZE}`
 
 const PLAYER_COLOR = "#3ecf8e"
 const CAREER_COLOR = "#c9a227"
@@ -96,8 +99,8 @@ export function PlayerSkillRadarSolo({
         <p className="mb-2 text-center text-xs font-medium text-ds-text">{title}</p>
       ) : null}
       <svg
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
-        className="mx-auto h-auto w-full max-w-[300px]"
+        viewBox={VIEWBOX}
+        className="mx-auto h-auto w-full max-w-[340px]"
         role="img"
         aria-label={`${playerName} skill profile`}
       >
@@ -149,8 +152,8 @@ export function PlayerSkillRadarCompare({
         <p className="mb-2 text-center text-xs font-medium text-ds-text">{title}</p>
       ) : null}
       <svg
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
-        className="mx-auto h-auto w-full max-w-[300px]"
+        viewBox={VIEWBOX}
+        className="mx-auto h-auto w-full max-w-[340px]"
         role="img"
         aria-label={`${seasonLabel} compared to career`}
       >

@@ -35,6 +35,8 @@ from auth import (
 )
 from Interpreter.interpreter import run_query, debug_query_routing, use_router_pipeline
 from Interpreter.pipeline import run_routed_query, EntityAmbiguity, GameLogScopeError
+from Interpreter import conversation_state
+from Interpreter.smalltalk import classify_smalltalk, smalltalk_reply
 from Interpreter.sql_builder import bundles_to_records, primary_bundle_for_frontend
 from Visualizer import chart_hint_line, select_charts
 from llm.client import LLMNotConfiguredError
@@ -51,6 +53,10 @@ from api.staging_reads import router as staging_router
 
 app.include_router(staging_router)
 
+from api.live import router as live_router
+
+app.include_router(live_router)
+
 from llm.client import openai_base_url
 
 context_client = (
@@ -63,9 +69,32 @@ context_client = (
 async def root():
     return {"status": "ok", "message": "API is running"}
 
+
+@app.get("/healthz")
+async def healthz():
+    """Liveness probe for the host platform. Deliberately does not touch DuckDB or
+    the LLM providers, so a cold or misconfigured data layer still reports healthy
+    and the platform does not restart-loop the service."""
+    return {"status": "ok"}
+
+def _cors_origins() -> List[str]:
+    """Allowed browser origins, comma-separated in CORS_ALLOW_ORIGINS.
+
+    Defaults to "*" so local development and the Vite/Next dev servers keep working
+    without configuration; production sets the deployed frontend origins explicitly.
+    """
+    raw = (os.getenv("CORS_ALLOW_ORIGINS") or "*").strip()
+    if raw == "*":
+        return ["*"]
+    return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+
+
+_cors_allow_origins = _cors_origins()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_allow_origins,
+    # Auth rides in an Authorization header, not cookies, so credentials stay off.
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -75,6 +104,10 @@ class QueryRequest(BaseModel):
     question: str
     conversationId: Optional[str] = None
     history: Optional[List[Dict[str, Any]]] = None
+    # Compact state returned by the previous /api/analysis turn (see
+    # Interpreter/conversation_state.py). When present it replaces `history`
+    # for follow-up resolution; older clients can keep sending history only.
+    conversationState: Optional[Dict[str, Any]] = None
 
 class AuthRequest(BaseModel):
     email: str
@@ -725,33 +758,35 @@ def _build_effective_question_from_history(
     return effective_question, analysis_question, "deterministic_context_wrapper"
 
 @app.post("/api/dashboards")
-async def dashboard_endpoint(request: QueryRequest):
-    """Chart generation — not wired to the vault yet. See DASHBOARD_PLAN.md.
+def dashboard_endpoint(request: QueryRequest):
+    """Chart spec derived from the router plan — see DashboardBackend/routed_dashboard.py.
 
-    This used to call `DashboardBackend.interpret_question`, which writes Postgres SQL
-    against the old per-season schema (`all_players_regular_2023_2024`) and hands a
-    DuckDB connection to psycopg2. Every request failed — and worse, it closed the
-    SHARED DuckDB connection in its `finally`, so one dashboard request took the entire
-    staging API down until the backend was restarted.
-
-    Failing honestly is strictly better than that. The replacement derives a chart spec
-    from the router plan the analyst already produces, with no second model call and no
-    model-written SQL.
+    The old `DashboardBackend.interpret_question` wrote Postgres SQL against the
+    retired per-season schema, so the legacy pipeline still gets a 501.
     """
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "Chart generation is being rebuilt on the router pipeline and is not "
-            "available yet. Ask the same question through /api/analysis for the "
-            "numbers in the meantime."
-        ),
-    )
+    # Sync def on purpose: FastAPI runs it in the threadpool, so the blocking router
+    # LLM call + DuckDB read don't freeze every other route on the event loop.
+    if not use_router_pipeline():
+        raise HTTPException(
+            status_code=501,
+            detail="Chart generation requires the router pipeline (INTERPRETER_PIPELINE=router).",
+        )
+    # Imported here: routed_dashboard pulls in DashboardBackend, which loads psycopg2.
+    from DashboardBackend.routed_dashboard import dashboard_for_question
 
-@app.post("/api/analysis")
-async def analysis_endpoint(
+    result = dashboard_for_question(request.question)
+    if not result.get("success"):
+        logger.info("Dashboard not built: %s %s", result.get("error"), result.get("details"))
+    # Always 200: ai_analyst shows `error` in its alert; no raw 4xx/5xx text.
+    return result
+
+def analysis_endpoint(
     request: QueryRequest,
     authorization: Optional[str] = Header(default=None),
+    _turn: Optional[Dict[str, Any]] = None,
 ):
+    # Routed via analysis_endpoint_with_state below; `_turn` carries the router
+    # context in and the plan/bundles out so the wrapper can update the state.
     if not (request.question or "").strip():
         # A bare ValueError from the router used to reach the catch-all below and
         # come back as 500 "Analysis failed: Question is empty".
@@ -761,14 +796,35 @@ async def analysis_endpoint(
         print("----HIT----- /api/analysis")
         print(f"Question: {request.question}")
 
+        # Greetings / small talk / keyboard mash: answer instantly, no LLM call.
+        smalltalk_intent = classify_smalltalk(request.question)
+        if smalltalk_intent:
+            print(f"Small-talk short-circuit: {smalltalk_intent}")
+            return {
+                "success": True,
+                "analysis": smalltalk_reply(smalltalk_intent),
+                "data": [],
+                "question": request.question,
+                "intent": smalltalk_intent,
+            }
+
         effective_question = request.question
         analysis_question = request.question
         history_context_applied = False
         history_context_reason = "no_history_available"
         history_messages: List[Dict[str, Any]] = _sanitize_history_messages(request.history)
 
+        routing_context = (_turn or {}).get("context") or ""
+        if routing_context and not use_router_pipeline():
+            routing_context = ""  # legacy pipeline has no router to hand state to
+
+        # Conversation state (when the client sent it) replaces the transcript:
+        # the router resolves the follow-up itself — no rewrite LLM call.
+        if routing_context:
+            history_context_applied = True
+            history_context_reason = "conversation_state_used"
         # Prefer history passed by the frontend (works for both guest and auth chats).
-        if history_messages and _should_apply_history_context(request.question):
+        elif history_messages and _should_apply_history_context(request.question):
             effective_question, analysis_question, context_strategy = _build_effective_question_from_history(
                 request.question, history_messages
             )
@@ -829,13 +885,21 @@ async def analysis_endpoint(
 
         # Names already mentioned in this thread break ties for a bare surname:
         # after "Seth Curry", a later plain "Curry" should stay Seth.
-        context_names = _entity_context_names(history_messages)
+        context_names = _entity_context_names(history_messages) + list(
+            (_turn or {}).get("context_names") or []
+        )
 
         try:
             if router_mode:
                 table_bundles, router_plan = run_routed_query(
-                    effective_question, context_names
+                    effective_question, context_names, context=routing_context or None
                 )
+                if _turn is not None:
+                    _turn["plan"], _turn["bundles"] = router_plan, table_bundles
+                if routing_context:
+                    analysis_question = conversation_state.resolved_question(
+                        request.question, router_plan
+                    )
                 query_result = primary_bundle_for_frontend(table_bundles)
             else:
                 query_result = run_query(effective_question)
@@ -1096,12 +1160,80 @@ async def analysis_endpoint(
     except HTTPException:
         raise  # already a deliberate, user-facing status
     except Exception as e:
-        # Log the detail; do not echo internal exception text back to the client.
+        # Never surface a stack trace / SQL error in the chat bubble. Log it, and
+        # return a friendly answer the frontends render like any other reply.
         logger.exception("Analysis failed for question: %s", request.question[:200])
-        raise HTTPException(
-            status_code=500,
-            detail="Analysis failed while processing that question. Please try again.",
+        payload = {
+            "success": True,
+            "analysis": (
+                "Sorry — I couldn't answer that one. Try rephrasing with a player or "
+                "team name and a season, e.g. \"Jokic points per game in 2024-25\" or "
+                "\"Celtics record 2024-25\"."
+            ),
+            "data": [],
+            "question": request.question,
+            "intent": "error",
+        }
+        if _analysis_debug_enabled():
+            payload["debug"] = {"error": f"{type(e).__name__}: {e}"}
+        return payload
+
+
+# Plain `def`: the LLM and DuckDB calls block, so FastAPI must run this in its
+# threadpool — as `async def` it froze every other route until the answer finished.
+@app.post("/api/analysis")
+def analysis_endpoint_with_state(
+    request: QueryRequest,
+    authorization: Optional[str] = Header(default=None),
+):
+    """/api/analysis plus compact conversation state (backward compatible).
+
+    Request may carry `conversationState` (whatever the previous response
+    returned). Response always carries the updated `conversationState`; clients
+    that ignore it keep the old history-based behaviour.
+    """
+    prior_state = conversation_state.sanitize_state(request.conversationState)
+    turn: Dict[str, Any] = {
+        "context": conversation_state.router_context_block(prior_state) if prior_state else "",
+        "context_names": (
+            list(prior_state.get("entities") or []) + list(prior_state.get("recent_entities") or [])
+            if prior_state
+            else []
+        ),
+        "plan": None,
+        "bundles": None,
+    }
+    payload = analysis_endpoint(request, authorization, _turn=turn)
+    if not isinstance(payload, dict):
+        return payload
+
+    if payload.get("intent") or payload.get("offTopic"):
+        # Small talk / off-topic / error turns don't move the conversation focus.
+        new_state = prior_state
+    else:
+        name_column = None
+        plan = turn.get("plan")
+        if plan is not None and getattr(plan, "table", None):
+            try:
+                from Interpreter.sql_builder import entity_name_column
+
+                name_column = entity_name_column(plan)
+            except Exception:  # noqa: BLE001 — falls back to common name columns
+                name_column = None
+        new_state = conversation_state.update_state(
+            prior_state,
+            question=request.question,
+            plan=plan,
+            bundles=turn.get("bundles"),
+            name_column=name_column,
+            answer=payload.get("analysis") if isinstance(payload.get("analysis"), str) else None,
         )
+    payload["conversationState"] = new_state
+    if isinstance(payload.get("debug"), dict):
+        payload["debug"]["conversationStateIn"] = bool(prior_state)
+        payload["debug"]["routerContextChars"] = len(turn["context"])
+    return payload
+
 
 @app.post("/api/signup")
 async def signup_endpoint(request: AuthRequest):

@@ -245,16 +245,23 @@ def _json_from_text(raw: str) -> dict[str, Any] | None:
         return None
 
 
-def _build_user_prompt(question: str, conn: Any | None = None) -> str:
+def _build_user_prompt(question: str, conn: Any | None = None, context: str | None = None) -> str:
+    # `context` is the compact conversation state (Interpreter/conversation_state.py)
+    # used to resolve follow-ups like "what about his rebounds?". Placed after the
+    # static catalog/few-shot so the long prefix stays cacheable.
+    context_text = f"{context.strip()}\n\n" if context and context.strip() else ""
     return (
         f"{table_catalog_prompt_text(conn)}\n\n"
         f"{_FEW_SHOT}\n\n"
+        f"{context_text}"
         f"User question:\n{question.strip()}\n\n"
         "JSON only:"
     )
 
 
-def route_question(question: str, *, _repair_errors: str | None = None) -> RouterPlan:
+def route_question(
+    question: str, *, _repair_errors: str | None = None, context: str | None = None
+) -> RouterPlan:
     """Route a question to a validated RouterPlan. One repair attempt on failure."""
     if not question.strip():
         raise ValueError("Question is empty")
@@ -264,7 +271,7 @@ def route_question(question: str, *, _repair_errors: str | None = None) -> Route
     except Exception:  # noqa: BLE001 — prompt still builds from the catalog file
         conn = None
 
-    user_prompt = _build_user_prompt(question, conn)
+    user_prompt = _build_user_prompt(question, conn, context)
     if _repair_errors:
         user_prompt += (
             f"\n\nYour previous JSON failed:\n{_repair_errors}\n"
@@ -297,6 +304,7 @@ def route_question(question: str, *, _repair_errors: str | None = None) -> Route
                     "supported=false with a reason naming the two tables. Do not refuse it "
                     "as off-topic again."
                 ),
+                context=context,
             )
 
     try:
@@ -306,7 +314,9 @@ def route_question(question: str, *, _repair_errors: str | None = None) -> Route
         if _repair_errors is not None:
             raise ValueError(f"Router plan invalid after repair: {exc}") from exc
         logger.warning("Router plan validation failed, retrying once: %s", exc)
-        return route_question(question, _repair_errors=f"Plan validation errors: {exc}")
+        return route_question(
+            question, _repair_errors=f"Plan validation errors: {exc}", context=context
+        )
 
 
 __all__ = ["route_question", "LLMNotConfiguredError"]

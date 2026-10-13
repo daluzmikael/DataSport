@@ -1,4 +1,4 @@
-import { X } from "lucide-react"
+import { ArrowLeft, X } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { GameLogTab } from "../data/schema/teamBox"
 import { getGameDetail, LIVE_FEED } from "../data/liveState"
@@ -28,10 +28,17 @@ import { useStagingPlayerProfile } from "../hooks/useStagingPlayerProfile"
 import { StagingBadge } from "./StagingBadge"
 import { AskReferenceButton, ReferencedLabel } from "./AskReferenceButton"
 
+/** Overlay scroll offsets by history entry, so Back lands where the user left off. */
+const overlayScrollByEntry = new Map<string, number>()
+
 interface DetailOverlayProps {
   target: DetailTarget
+  /** Unique per history entry (see useAppNavigation); keys scroll restoration. */
+  historyKey?: string
   closing?: boolean
   onClose: () => void
+  /** Previous overlay; omitted when this is the first overlay over the page. */
+  onBack?: () => void
   onAsk: (prefill: string) => void
   askDraft: string
   onAskDraftChange: (draft: string) => void
@@ -45,8 +52,10 @@ interface DetailOverlayProps {
 
 export function DetailOverlay({
   target,
+  historyKey,
   closing = false,
   onClose,
+  onBack,
   onAsk,
   askDraft,
   onAskDraftChange,
@@ -70,6 +79,54 @@ export function DetailOverlay({
       askInputRef.current?.focus()
     }
   }, [referenceFocusKey])
+
+  // Escape closes back to the page underneath. Inner popovers can claim the key
+  // first with `preventDefault()`.
+  const isOpen = target != null
+  useEffect(() => {
+    if (!isOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) onClose()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [isOpen, onClose])
+
+  // Each history entry keeps its own scroll: a fresh drill-in starts at the top,
+  // Back / Forward return to the saved offset (retried while vault data loads in).
+  const scrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !historyKey) return
+    const saved = overlayScrollByEntry.get(historyKey) ?? 0
+    const started = performance.now()
+    let restoring = true
+    let frame = 0
+    const step = () => {
+      el.scrollTop = saved
+      if (Math.abs(el.scrollTop - saved) < 2 || performance.now() - started > 2000) {
+        restoring = false
+        return
+      }
+      frame = requestAnimationFrame(step)
+    }
+    step()
+    const stopRestoring = () => {
+      restoring = false
+      cancelAnimationFrame(frame)
+    }
+    const onScroll = () => {
+      if (!restoring) overlayScrollByEntry.set(historyKey, el.scrollTop)
+    }
+    const userInput = ["wheel", "touchstart", "pointerdown", "keydown"] as const
+    el.addEventListener("scroll", onScroll, { passive: true })
+    for (const type of userInput) el.addEventListener(type, stopRestoring, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      el.removeEventListener("scroll", onScroll)
+      for (const type of userInput) el.removeEventListener(type, stopRestoring)
+    }
+  }, [historyKey])
 
   const overlayPlayerId =
     target?.type === "player"
@@ -158,8 +215,19 @@ export function DetailOverlay({
       <header
         className={`relative shrink-0 border-b border-ds-border px-4 py-3 ${
           playerRow || teamProfile ? "min-h-[4.5rem]" : ""
-        }`}
+        } ${onBack ? "pl-14" : ""}`}
       >
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="absolute left-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-ds-muted hover:bg-ds-raised hover:text-ds-text"
+            aria-label="Back"
+            title="Back"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+        )}
         <button
           type="button"
           onClick={onClose}
@@ -341,7 +409,7 @@ export function DetailOverlay({
         )}
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
         {teamProfile && (
           <TeamDetail
             profile={teamProfile}

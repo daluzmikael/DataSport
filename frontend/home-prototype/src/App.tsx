@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { LIVE_FEED } from "./data/liveState"
 import { useLiveBoard } from "./hooks/useLiveBoard"
+import { useAppNavigation, type NavEntry } from "./hooks/useAppNavigation"
 import { postAnalysis } from "./api/analysisClient"
 import { MOCK_PLAYER_NBA_IDS } from "./api/nbaIds"
 import { AuthProvider, useAuth } from "./contexts/AuthContext"
@@ -15,7 +16,7 @@ import { FavoritesPage } from "./components/FavoritesPage"
 import { PlayerLibraryPage } from "./components/PlayerLibraryPage"
 import { PlaceholderPage } from "./components/PlaceholderPage"
 import { StagingConnectionBar } from "./components/StagingConnectionBar"
-import type { ChatMessage, DetailTarget, NavPage } from "./types"
+import type { ChatMessage, DetailTarget } from "./types"
 
 /**
  * Prototype aliases (`player-jokic`) only carry demo data. Unless the player is on
@@ -29,21 +30,55 @@ function normalizeDetailTarget(target: DetailTarget): DetailTarget {
   return onLiveFeed ? target : { ...target, id: `nba-${nbaId}` }
 }
 
+// "Continue as demo user" lasts for the tab, so a refresh (or a deep link opened
+// in the same tab) doesn't bounce back to the login screen.
+const ENTERED_KEY = "ds_entered"
+
+function readEntered(): boolean {
+  try {
+    return window.sessionStorage.getItem(ENTERED_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+function rememberEntered() {
+  try {
+    window.sessionStorage.setItem(ENTERED_KEY, "1")
+  } catch {
+    // Storage blocked: the gate just shows again on refresh.
+  }
+}
+
 function AppShell() {
   const { user } = useAuth()
-  const [loggedIn, setLoggedIn] = useState(!!user)
-  const [nav, setNav] = useState<NavPage>("analyzer")
+  const [entered, setEntered] = useState(readEntered)
+  const loggedIn = entered || !!user
+  // Page + overlay live in the URL / browser history (see useAppNavigation).
+  const {
+    entry: navEntry,
+    page: nav,
+    detail,
+    navigatePage,
+    openDetail: setDetail,
+    backDetail,
+    closeDetail,
+  } = useAppNavigation(normalizeDetailTarget)
   const [activeThread, setActiveThread] = useState<string | null>(null)
   const [chatsOpen, setChatsOpen] = useState(false)
   // The chat opens empty. `SAMPLE_MESSAGES` seeded it with a scripted exchange that
   // read as a real answer the user had never asked for.
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [detail, setDetailRaw] = useState<DetailTarget>(null)
-  const setDetail = useCallback(
-    (target: DetailTarget) => setDetailRaw(normalizeDetailTarget(target)),
-    [],
-  )
-  const [closingDetail, setClosingDetail] = useState(false)
+  // The overlay entry on screen. It outlives `detail` by the slide-out animation,
+  // whether the close came from the X, Escape or the browser's Back button.
+  const [shownDetail, setShownDetail] = useState<NavEntry | null>(detail ? navEntry : null)
+  if (detail && shownDetail?.key !== navEntry.key) setShownDetail(navEntry)
+  const closingDetail = !detail && shownDetail != null
+  useEffect(() => {
+    if (!closingDetail) return
+    const t = window.setTimeout(() => setShownDetail(null), 420)
+    return () => window.clearTimeout(t)
+  }, [closingDetail])
   const [contextHint, setContextHint] = useState<string | null>(null)
   const [askDraft, setAskDraft] = useState("")
   const [referenceFocusKey, setReferenceFocusKey] = useState(0)
@@ -138,20 +173,21 @@ function AppShell() {
     (prefill: string) => {
       setContextHint(prefill.slice(0, 80) + (prefill.length > 80 ? "…" : ""))
       handleSend(prefill)
+      // The answer lands in the analyzer; Back returns to the overlay it was asked from.
+      navigatePage("analyzer")
     },
-    [handleSend],
+    [handleSend, navigatePage],
   )
 
-  const handleCloseDetail = useCallback(() => {
-    setClosingDetail(true)
-    window.setTimeout(() => {
-      setDetail(null)
-      setClosingDetail(false)
-    }, 420)
-  }, [])
-
   if (!loggedIn) {
-    return <LoginGate onEnter={() => setLoggedIn(true)} />
+    return (
+      <LoginGate
+        onEnter={() => {
+          rememberEntered()
+          setEntered(true)
+        }}
+      />
+    )
   }
 
   return (
@@ -159,7 +195,7 @@ function AppShell() {
       <StagingConnectionBar />
       <div className="relative flex h-full w-full overflow-hidden">
         <div className="h-full w-16 shrink-0">
-          <NavRail active={nav} onNavigate={setNav} />
+          <NavRail active={nav} onNavigate={navigatePage} />
         </div>
 
         <div className="min-w-0 flex-1 overflow-hidden">
@@ -213,9 +249,11 @@ function AppShell() {
         />
       </div>
       <DetailOverlay
-        target={detail}
+        target={shownDetail?.detail ?? null}
+        historyKey={shownDetail?.key}
         closing={closingDetail}
-        onClose={handleCloseDetail}
+        onClose={closeDetail}
+        onBack={!closingDetail && shownDetail && shownDetail.depth > 1 ? backDetail : undefined}
         onAsk={handleAskFromDetail}
         askDraft={askDraft}
         onAskDraftChange={setAskDraft}

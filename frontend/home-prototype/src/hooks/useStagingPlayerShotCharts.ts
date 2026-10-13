@@ -4,21 +4,27 @@ import { mergeShotZoneRows, shotsFromShotZoneRow } from "../api/playerShotChartD
 import { resolveNbaPlayerId } from "../api/nbaIds"
 import {
   fetchPlayerGameLogSeasons,
+  fetchPlayerShotChart,
   fetchPlayerShotZones,
 } from "../api/stagingClient"
 import { generateMockShots, type MockShot } from "../data/mockShots"
 import { CAREER_LOG_VALUE, usePlayerGameLogSeasons } from "./useStagingPlayer"
 
-/** Vault shot charts enabled for Tatum first; expand once validated. */
-const VAULT_SHOT_CHART_PLAYER_IDS = new Set([
-  "player-tatum",
-  "1628369",
-  "nba-1628369",
-])
-
-function vaultShotChartsEnabled(playerId: string, nbaId: string | null): boolean {
-  if (!nbaId) return false
-  return VAULT_SHOT_CHART_PLAYER_IDS.has(playerId) || VAULT_SHOT_CHART_PLAYER_IDS.has(nbaId)
+/** Real shot locations from `player_shot_chart`; empty when the season is not staged. */
+async function fetchRealShots(nbaId: string, season: string): Promise<MockShot[]> {
+  const rows = await fetchPlayerShotChart(
+    nbaId,
+    season === CAREER_LOG_VALUE ? "career" : season,
+    "Regular Season",
+  )
+  if (!rows) return []
+  return rows
+    .map((r) => ({
+      loc_x: Number(r.LOC_X),
+      loc_y: Number(r.LOC_Y),
+      shot_made_flag: (Number(r.SHOT_MADE_FLAG) === 1 ? 1 : 0) as 0 | 1,
+    }))
+    .filter((s) => Number.isFinite(s.loc_x) && Number.isFinite(s.loc_y))
 }
 
 export function usePlayerShotChartSeasons(playerId: string) {
@@ -51,7 +57,7 @@ export function usePlayerShotChartSeasons(playerId: string) {
 
 export function useStagingPlayerShotCharts(playerId: string, season: string) {
   const nbaId = resolveNbaPlayerId(playerId)
-  const vaultEnabled = vaultShotChartsEnabled(playerId, nbaId)
+  const vaultEnabled = Boolean(nbaId)
   const [vaultShots, setVaultShots] = useState<MockShot[] | null>(null)
   const [fromApi, setFromApi] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -68,6 +74,16 @@ export function useStagingPlayerShotCharts(playerId: string, season: string) {
     setVaultShots(null)
     setFromApi(false)
     ;(async () => {
+      const real = await fetchRealShots(nbaId, season)
+      if (cancelled) return
+      if (real.length > 0) {
+        setVaultShots(real)
+        setFromApi(true)
+        setLoading(false)
+        return
+      }
+
+      // Fallback: synthesize points from zone totals.
       let row: Record<string, unknown> | null = null
 
       if (season === CAREER_LOG_VALUE) {

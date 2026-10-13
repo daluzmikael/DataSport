@@ -5,6 +5,9 @@ const CX = SIZE / 2
 const CY = SIZE / 2
 const R = 100
 const LEVELS = 4
+/** Extra room around the plot so axis labels at the edges are not clipped. */
+const PAD = 36
+const VIEWBOX = `${-PAD} 0 ${SIZE + PAD * 2} ${SIZE}`
 
 const PLAYER_COLOR = "#3ecf8e"
 const CAREER_COLOR = "#c9a227"
@@ -46,7 +49,8 @@ function RadarGrid({ categories }: { categories: string[] }) {
             key={li}
             points={pts}
             fill="none"
-            stroke="rgba(255,255,255,0.1)"
+            stroke="var(--color-ds-muted)"
+            strokeOpacity={0.3}
             strokeWidth={1}
           />
         )
@@ -56,14 +60,14 @@ function RadarGrid({ categories }: { categories: string[] }) {
         const [lx, ly] = polar((360 / n) * i, R + 18)
         return (
           <g key={cat}>
-            <line x1={CX} y1={CY} x2={x} y2={y} stroke="rgba(255,255,255,0.12)" />
+            <line x1={CX} y1={CY} x2={x} y2={y} stroke="var(--color-ds-muted)" strokeOpacity={0.35} />
             <text
               x={lx}
               y={ly}
               textAnchor="middle"
               dominantBaseline="middle"
-              fill="rgba(255,255,255,0.55)"
-              fontSize={10}
+              fill="var(--color-ds-text)"
+              fontSize={11}
               fontWeight={600}
             >
               {cat}
@@ -93,8 +97,8 @@ export function PlayerSkillRadarSolo({
     <div>
       <p className="mb-2 text-center text-xs font-medium text-ds-text">{title}</p>
       <svg
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
-        className="mx-auto h-auto w-full max-w-[300px]"
+        viewBox={VIEWBOX}
+        className="mx-auto h-auto w-full max-w-[340px]"
         role="img"
         aria-label={`${playerName} skill profile`}
       >
@@ -143,8 +147,8 @@ export function PlayerSkillRadarCompare({
     <div>
       <p className="mb-2 text-center text-xs font-medium text-ds-text">{title}</p>
       <svg
-        viewBox={`0 0 ${SIZE} ${SIZE}`}
-        className="mx-auto h-auto w-full max-w-[300px]"
+        viewBox={VIEWBOX}
+        className="mx-auto h-auto w-full max-w-[340px]"
         role="img"
         aria-label={`${seasonLabel} compared to career`}
       >

@@ -122,7 +122,7 @@ export default function ScatterComponent({ data, config }: ScatterProps) {
     timeFrame,
   } = config || {}
 
-  const dotColor = "#ffffff"
+  const dotColor = "hsl(var(--chart-1))"
 
   const { rows, isSingleAxis, capped } = useMemo(() => {
     if (!Array.isArray(data) || data.length === 0) {
@@ -217,14 +217,14 @@ export default function ScatterComponent({ data, config }: ScatterProps) {
       <CardContent className="px-2">
         <ChartContainer config={chartConfig} className="h-[360px] w-full min-h-[360px]">
           <ScatterChart margin={{ top: 20, right: 30, bottom: 40, left: 20 }}>
-            <CartesianGrid stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
+            <CartesianGrid stroke="rgba(32,31,29,0.12)" strokeDasharray="3 3" />
             <XAxis
               type="number"
               dataKey="x_value"
               name={xAxisLabel || "X"}
               domain={xDomain}
               hide={isSingleAxis}
-              tick={{ fontSize: 12, fill: "rgba(255,255,255,0.55)" }}
+              tick={{ fontSize: 12, fill: "rgba(32,31,29,0.55)" }}
               label={
                 !isSingleAxis && xAxisLabel
                   ? {
@@ -242,7 +242,7 @@ export default function ScatterComponent({ data, config }: ScatterProps) {
               dataKey="y_value"
               name={yAxisLabel || "Y"}
               domain={yDomain}
-              tick={{ fontSize: 12, fill: "rgba(255,255,255,0.55)" }}
+              tick={{ fontSize: 12, fill: "rgba(32,31,29,0.55)" }}
               label={
                 yAxisLabel
                   ? {

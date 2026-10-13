@@ -1,3 +1,5 @@
+import { getLivePlayerNextGame, isLiveDataLoaded } from "./liveRegistry"
+
 export interface PlayerNextGame {
   label: string
   when: string
@@ -11,5 +13,7 @@ const SCHEDULE: Record<string, PlayerNextGame> = {
 }
 
 export function getPlayerNextGame(playerId: string): PlayerNextGame | null {
+  // Real NBA schedule (via /api/live/board) wins once loaded; mock otherwise.
+  if (isLiveDataLoaded()) return getLivePlayerNextGame(playerId) ?? null
   return SCHEDULE[playerId] ?? null
 }

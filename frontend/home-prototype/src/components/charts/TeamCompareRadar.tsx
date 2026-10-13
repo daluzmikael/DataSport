@@ -61,7 +61,7 @@ export function TeamCompareRadar({
               key={li}
               points={pts}
               fill="none"
-              stroke="rgba(255,255,255,0.1)"
+              stroke="rgba(32,31,29,0.1)"
               strokeWidth={1}
             />
           )
@@ -72,13 +72,13 @@ export function TeamCompareRadar({
           const [lx, ly] = polar((360 / n) * i, R + 18)
           return (
             <g key={cat}>
-              <line x1={CX} y1={CY} x2={x} y2={y} stroke="rgba(255,255,255,0.12)" />
+              <line x1={CX} y1={CY} x2={x} y2={y} stroke="rgba(32,31,29,0.12)" />
               <text
                 x={lx}
                 y={ly}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fill="rgba(255,255,255,0.55)"
+                fill="rgba(32,31,29,0.55)"
                 fontSize={10}
                 fontWeight={600}
               >

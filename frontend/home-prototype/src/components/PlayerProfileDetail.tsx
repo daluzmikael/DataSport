@@ -1,6 +1,7 @@
 import { getPlayerSeasonInsight } from "../data/playerAnalyzerMock"
 import { getPlayerAccolades } from "../data/playerAccoladesMock"
 import { useStagingPlayerCareerTotals } from "../hooks/useStagingPlayer"
+import { useStagingPlayerSeasonSummary } from "../hooks/useStagingPlayerSeasonSummary"
 import { LIVE_FEED } from "../data/mock"
 import type { PlayerLive } from "../types"
 import { isPlayerInLiveGame, resolvePlayerGameId } from "../utils/gameLabels"
@@ -57,7 +58,8 @@ export function PlayerProfileDetail({
   onReference,
   onAsk,
 }: PlayerProfileDetailProps) {
-  const seasonInsight = getPlayerSeasonInsight(player.id)
+  const { summary: vaultSummary, season: summarySeason } = useStagingPlayerSeasonSummary(player.id)
+  const seasonInsight = vaultSummary ?? getPlayerSeasonInsight(player.id)
   const liveGameId = isPlayerInLiveGame(player, LIVE_FEED)
     ? resolvePlayerGameId(player, LIVE_FEED)
     : undefined
@@ -66,7 +68,7 @@ export function PlayerProfileDetail({
     <div className="mx-auto max-w-4xl space-y-4">
       <AnalyzerInsightBlock
         title="Season overview"
-        badge="Example · AI season summary"
+        badge={vaultSummary ? `${summarySeason} · from vault stats` : "Example · AI season summary"}
         onAsk={onAsk}
       >
         {seasonInsight}

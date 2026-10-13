@@ -39,7 +39,7 @@ services:
         sync: false
 
       # --- Frontend origins -------------------------------------------------
-      # Comma-separated. Set to the Vercel production domain once it exists.
+      # Comma-separated. Vercel production domain: https://datasport-two.vercel.app
       - key: CORS_ALLOW_ORIGINS
         sync: false
 

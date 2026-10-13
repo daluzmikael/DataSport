@@ -2,7 +2,7 @@ import type { LeaderboardEntry } from "../../api/playerLeaderboardData"
 
 const W = 520
 const ROW_H = 28
-const PAD = { top: 12, right: 52, bottom: 8, left: 108 }
+const PAD = { top: 12, right: 52, bottom: 8, left: 132 }
 const BAR_COLOR = "#3ecf8e"
 const HIGHLIGHT_COLOR = "#f5c542"
 
@@ -65,7 +65,7 @@ export function PlayerLeaderboardChart({
                 y={y}
                 textAnchor="end"
                 dominantBaseline="middle"
-                fill={highlighted ? HIGHLIGHT_COLOR : "rgba(255,255,255,0.75)"}
+                fill={highlighted ? HIGHLIGHT_COLOR : "rgba(32,31,29,0.75)"}
                 fontSize={10}
                 fontWeight={highlighted ? 700 : 500}
                 fontFamily="DM Sans, sans-serif"
@@ -76,7 +76,7 @@ export function PlayerLeaderboardChart({
                 x={4}
                 y={y}
                 dominantBaseline="middle"
-                fill="rgba(255,255,255,0.35)"
+                fill="rgba(32,31,29,0.35)"
                 fontSize={8}
                 fontFamily="DM Sans, sans-serif"
               >
@@ -95,7 +95,7 @@ export function PlayerLeaderboardChart({
                 x={PAD.left + bw + 6}
                 y={y}
                 dominantBaseline="middle"
-                fill="rgba(255,255,255,0.65)"
+                fill="rgba(32,31,29,0.65)"
                 fontSize={9}
                 fontFamily="DM Sans, sans-serif"
               >

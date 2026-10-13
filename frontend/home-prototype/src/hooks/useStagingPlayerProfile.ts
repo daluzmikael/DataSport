@@ -60,7 +60,8 @@ async function resolveVaultPlayerProfile(
     return stubPlayerForStaging(nbaId, name, teamAbbr)
   }
 
-  return stubPlayerForStaging(nbaId, "Player", "—")
+  // Every read failed (usually a busy/restarting backend) — let the caller retry.
+  return null
 }
 
 /**
@@ -94,9 +95,14 @@ export function useStagingPlayerProfile(
     setVaultProfile(null)
 
     ;(async () => {
-      const profile = await resolveVaultPlayerProfile(nbaId, preferredSeason)
+      let profile: PlayerLive | null = null
+      for (let attempt = 0; attempt < 3 && !profile; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt))
+        if (cancelled) return
+        profile = await resolveVaultPlayerProfile(nbaId, preferredSeason)
+      }
       if (cancelled) return
-      setVaultProfile(profile)
+      setVaultProfile(profile ?? stubPlayerForStaging(nbaId, "Player", "—"))
       setLoading(false)
     })()
 

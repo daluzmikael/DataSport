@@ -79,11 +79,54 @@ def _entity_filter(plan: RouterPlan, conn: Any | None = None) -> str | None:
     if not col:
         logger.warning("No name column on %s — entity filter skipped", plan.table)
         return None
+    # team_standings splits "Boston" / "Celtics" across TeamCity / TeamName, so the
+    # router's "Boston Celtics" would never match TeamName alone. Match the joined form.
+    expr = col
+    if col.lower() == "teamname":
+        city = resolve_column(plan.table, "TeamCity", conn)
+        if city:
+            expr = f"({city} || ' ' || {col})"
     clauses = [
-        f"strip_accents({col}) ILIKE '%{_escape_literal(_ascii_fold(e))}%'"
+        f"strip_accents({expr}) ILIKE '%{_escape_literal(_ascii_fold(e))}%'"
         for e in plan.entities
     ]
     return "(" + " OR ".join(clauses) + ")"
+
+
+# Percentage leaderboards need a volume floor, otherwise "best 3pt shooters" is won
+# by someone who went 1-for-1. Volume = attempts (x GP for PerGame rows); a player
+# qualifies with at least this share of the league-high volume in the same slice.
+PCT_QUALIFIER_SHARE = float(os.getenv("ROUTER_PCT_QUALIFIER_SHARE", "0.25"))
+GP_QUALIFIER_SHARE = float(os.getenv("ROUTER_GP_QUALIFIER_SHARE", "0.5"))
+_PCT_VOLUME_COLUMNS = {"TS_PCT": "FGA", "EFG_PCT": "FGA"}
+
+
+def _leaderboard_qualifier(
+    plan: RouterPlan, per_mode: str, slice_clauses: list[str], conn: Any | None = None
+) -> str | None:
+    if not plan.is_leaderboard() or not plan.order_by or plan.entity_type != "player":
+        return None
+    table = plan.table
+    order_col = resolve_column(table, plan.order_by, conn)
+    if not order_col:
+        return None
+    gp = resolve_column(table, "GP", conn)
+    where = (" WHERE " + " AND ".join(slice_clauses)) if slice_clauses else ""
+
+    volume = None
+    upper = order_col.upper()
+    if upper.endswith("_PCT"):
+        att_name = _PCT_VOLUME_COLUMNS.get(upper, upper[: -len("_PCT")] + "A")
+        att = resolve_column(table, att_name, conn)
+        if att:
+            volume = f"({att} * {gp})" if (gp and per_mode == "PerGame") else att
+    if volume:
+        share = PCT_QUALIFIER_SHARE
+    elif gp and (upper.endswith("_PCT") or per_mode == "PerGame"):
+        volume, share = gp, GP_QUALIFIER_SHARE
+    else:
+        return None
+    return f"{volume} >= (SELECT {share} * MAX({volume}) FROM {table}{where})"
 
 
 def _season_filter(plan: RouterPlan, conn: Any | None = None) -> str | None:
@@ -146,6 +189,10 @@ def build_select_sql(plan: RouterPlan, per_mode: str, conn: Any | None = None) -
     entity_clause = _entity_filter(plan, conn)
     if entity_clause:
         where_parts.append(entity_clause)
+
+    qualifier = _leaderboard_qualifier(plan, per_mode, list(where_parts), conn)
+    if qualifier:
+        where_parts.append(qualifier)
 
     sql = f"SELECT * FROM {table}"
     if where_parts:

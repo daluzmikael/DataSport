@@ -241,7 +241,7 @@ def search_players(
               AND season_type = 'Regular Season'
               AND per_mode = 'PerGame'
               AND {_measure_type_sql(measure_type="Base")}
-              AND PLAYER_NAME ILIKE '%{term}%'
+              AND strip_accents(PLAYER_NAME) ILIKE strip_accents('%{term}%')
             ORDER BY PLAYER_NAME
             LIMIT {int(limit)}
             """
@@ -255,7 +255,7 @@ def search_players(
                 WHERE season_type = 'Regular Season'
                   AND per_mode = 'PerGame'
                   AND {_measure_type_sql(measure_type="Base")}
-                  AND PLAYER_NAME ILIKE '%{term}%'
+                  AND strip_accents(PLAYER_NAME) ILIKE strip_accents('%{term}%')
             ),
             agg AS (
                 SELECT
@@ -789,6 +789,33 @@ def player_court_shots(
     return {"success": True, "data": rows}
 
 
+@router.get("/players/{player_id}/shot-chart")
+def player_shot_chart(
+    player_id: str,
+    season: str = "2024-25",
+    season_type: str = "Regular Season",
+) -> dict[str, Any]:
+    """Every field-goal attempt with court coordinates, from `player_shot_chart`.
+
+    `season=career` returns all seasons. `court_shots` only holds zone aggregates,
+    so this is the table that can feed a real hexbin chart.
+    """
+    pid = int(_num_id(player_id, "player_id"))
+    season_type = _season_type(season_type)
+    season_sql = "" if season == "career" else f"AND season = '{_season(season)}'"
+    rows = _q(
+        f"""
+        SELECT LOC_X, LOC_Y, SHOT_MADE_FLAG, SHOT_ZONE_BASIC, SHOT_DISTANCE,
+               ACTION_TYPE, SHOT_TYPE, PERIOD, GAME_DATE, season
+        FROM player_shot_chart
+        WHERE PLAYER_ID = {pid}
+          AND season_type = '{season_type}'
+          {season_sql}
+        """
+    )
+    return {"success": True, "data": rows}
+
+
 @router.get("/teams/by-abbr/{abbr}/id")
 def team_id_by_abbr(abbr: str) -> dict[str, Any]:
     code = abbr.strip().upper().replace("'", "")
@@ -797,9 +824,8 @@ def team_id_by_abbr(abbr: str) -> dict[str, Any]:
     rows = _q(
         f"""
         SELECT TEAM_ID, TEAM_ABBREVIATION, TEAM_NAME
-        FROM team_season_stats
+        FROM team_game_logs
         WHERE TEAM_ABBREVIATION = '{code}'
-          AND {_measure_type_sql(measure_type="Base")}
         ORDER BY season DESC
         LIMIT 1
         """

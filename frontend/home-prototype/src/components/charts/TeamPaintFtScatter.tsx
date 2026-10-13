@@ -50,7 +50,7 @@ export function TeamPaintFtScatter({ points, awayAbbr, homeAbbr }: TeamPaintFtSc
     <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Paint points vs free throw attempts">
       <defs>
         <pattern id="scatterGrid" width="24" height="24" patternUnits="userSpaceOnUse">
-          <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+          <path d="M 24 0 L 0 0 0 24" fill="none" stroke="rgba(32,31,29,0.06)" strokeWidth="1" />
         </pattern>
       </defs>
       <rect x={PAD.left} y={PAD.top} width={plotW} height={plotH} fill="url(#scatterGrid)" rx={4} />
@@ -64,10 +64,10 @@ export function TeamPaintFtScatter({ points, awayAbbr, homeAbbr }: TeamPaintFtSc
               x2={PAD.left + plotW}
               y1={y}
               y2={y}
-              stroke="rgba(255,255,255,0.08)"
+              stroke="rgba(32,31,29,0.08)"
               strokeDasharray="4 4"
             />
-            <text x={PAD.left - 6} y={y + 3} textAnchor="end" fill="rgba(255,255,255,0.45)" fontSize={9}>
+            <text x={PAD.left - 6} y={y + 3} textAnchor="end" fill="rgba(32,31,29,0.45)" fontSize={9}>
               {t}
             </text>
           </g>
@@ -83,10 +83,10 @@ export function TeamPaintFtScatter({ points, awayAbbr, homeAbbr }: TeamPaintFtSc
               x2={x}
               y1={PAD.top}
               y2={PAD.top + plotH}
-              stroke="rgba(255,255,255,0.08)"
+              stroke="rgba(32,31,29,0.08)"
               strokeDasharray="4 4"
             />
-            <text x={x} y={H - 18} textAnchor="middle" fill="rgba(255,255,255,0.45)" fontSize={9}>
+            <text x={x} y={H - 18} textAnchor="middle" fill="rgba(32,31,29,0.45)" fontSize={9}>
               {t}
             </text>
           </g>
@@ -97,7 +97,7 @@ export function TeamPaintFtScatter({ points, awayAbbr, homeAbbr }: TeamPaintFtSc
         x={PAD.left + plotW / 2}
         y={H - 4}
         textAnchor="middle"
-        fill="rgba(255,255,255,0.55)"
+        fill="rgba(32,31,29,0.55)"
         fontSize={10}
         fontWeight={500}
       >
@@ -107,7 +107,7 @@ export function TeamPaintFtScatter({ points, awayAbbr, homeAbbr }: TeamPaintFtSc
         x={14}
         y={PAD.top + plotH / 2}
         textAnchor="middle"
-        fill="rgba(255,255,255,0.55)"
+        fill="rgba(32,31,29,0.55)"
         fontSize={10}
         fontWeight={500}
         transform={`rotate(-90, 14, ${PAD.top + plotH / 2})`}
@@ -136,7 +136,7 @@ export function TeamPaintFtScatter({ points, awayAbbr, homeAbbr }: TeamPaintFtSc
         {[awayAbbr, homeAbbr].map((abbr) => (
           <g key={abbr} transform={`translate(0, ${abbr === homeAbbr ? 14 : 0})`}>
             <circle cx={4} cy={4} r={4} fill={teamChartColor(abbr)} fillOpacity={0.7} />
-            <text x={12} y={7} fill="rgba(255,255,255,0.6)" fontSize={9}>
+            <text x={12} y={7} fill="rgba(32,31,29,0.6)" fontSize={9}>
               {abbr}
             </text>
           </g>

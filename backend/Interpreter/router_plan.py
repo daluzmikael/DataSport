@@ -170,8 +170,20 @@ def table_catalog_prompt_text(conn: Any | None = None) -> str:
 # Plan model
 # --------------------------------------------------------------------------
 class RouterPlan(BaseModel):
+    # "nba" for real questions; "off_topic" for greetings / non-basketball asks,
+    # which the API short-circuits with a capabilities reply (no SQL, no Call 2).
+    intent: str = "nba"
     supported: bool = True
     unsupported_reason: str | None = None
+
+    @field_validator("intent", mode="before")
+    @classmethod
+    def _normalize_intent(cls, v: Any) -> str:
+        text = str(v or "nba").strip().lower()
+        return "off_topic" if text in {"off_topic", "offtopic", "smalltalk", "small_talk", "chitchat"} else "nba"
+
+    def is_off_topic(self) -> bool:
+        return self.intent == "off_topic"
 
     entity_type: Literal["player", "team", "league"] = "player"
     entities: list[str] = Field(default_factory=list)
@@ -253,6 +265,8 @@ def validate_plan(plan: RouterPlan, conn: Any | None = None) -> None:
     they only steer analyst column selection. `order_by` must be real, because a
     bad ORDER BY is a hard SQL error.
     """
+    if plan.is_off_topic():
+        return
     if not plan.supported:
         if not (plan.unsupported_reason or "").strip():
             raise PlanValidationError("supported=false requires unsupported_reason")

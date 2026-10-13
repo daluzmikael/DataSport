@@ -3,6 +3,7 @@ import {
   OTHER_LIVE_GAME_DETAILS,
 } from "./otherLiveGamesMock"
 import { PAST_GAME_DETAILS, PAST_PLAYER_PROFILES } from "./pastDashboardMock"
+import { getLiveGameDetail } from "./liveRegistry"
 import type {
   GameDetailView,
   ChatFolder,
@@ -213,6 +214,8 @@ export const LIVE_FEED: LiveFeedItem[] = [
 ]
 
 export function getGameDetail(gameId: string): GameDetailView | undefined {
+  const live = getLiveGameDetail(gameId)
+  if (live) return live
   const followed = LIVE_FEED.find(
     (i): i is Extract<LiveFeedItem, { kind: "followed-team" }> =>
       i.id === gameId && i.kind === "followed-team",

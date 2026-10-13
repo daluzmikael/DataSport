@@ -14,9 +14,9 @@ interface AnalyzerPanelProps {
 }
 
 const STARTERS = [
-  "In the current Celtics game, who is shooting worst from three on both teams?",
+  "Compare Nikola Jokić and Joel Embiid in 2022-23",
+  "Who were the top 5 scorers in 2024-25?",
   "Which season was Michael Jordan's best 3-point shooting year?",
-  "Compare Tatum's game score tonight to his season average.",
 ]
 
 export function AnalyzerPanel({
@@ -84,9 +84,9 @@ export function AnalyzerPanel({
                 Assistant
               </p>
               <p className="mt-1 text-sm leading-relaxed text-ds-text">
-                Welcome to DataSport. Ask about any NBA stat — historical seasons, live
-                games, or players you follow. Try referencing the Celtics game on the
-                right, or ask something unrelated like Jordan's best three-point season.
+                Welcome to DataSport. Ask about any NBA stat in plain English — 30 seasons
+                of player, team and game data, answered from the stats vault. Try one of
+                these, or open a game on the right.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {STARTERS.map((q) => (
@@ -104,7 +104,8 @@ export function AnalyzerPanel({
               </div>
             </div>
           )}
-          {messages.map((m) => (
+          {/* The seeded welcome message (m1) is shown by the card above instead. */}
+          {messages.filter((m) => m.id !== "m1").map((m) => (
             <div
               key={m.id}
               className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}

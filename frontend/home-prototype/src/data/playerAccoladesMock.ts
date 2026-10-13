@@ -206,7 +206,7 @@ function buildAccoladeRow(profile: PlayerAccoladeProfile, careerTotals?: Record<
     })
   }
 
-  push(buildDraftSlot(profile))
+  if (profile.draft) push(buildDraftSlot(profile))
 
   const fillers = buildCareerFillers(careerTotals, usedLabels)
   for (const filler of fillers) {
@@ -240,9 +240,8 @@ const DURANT_PROFILE: PlayerAccoladeProfile = {
   roty: true,
 }
 
-const DEFAULT_PROFILE: PlayerAccoladeProfile = {
-  draft: "undrafted",
-}
+/** Unknown players: no invented draft/awards — the row fills with real career totals. */
+const DEFAULT_PROFILE: PlayerAccoladeProfile = {}
 
 function resolveAccoladeProfile(playerId: string): PlayerAccoladeProfile {
   const key = canonicalMockPlayerId(playerId)

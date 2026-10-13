@@ -7,14 +7,11 @@ Size check first (no credentials needed, no upload):
 
     python -m scripts.upload_staging --dry-run
 
-Upload (credentials from the environment or a .env in backend/):
+Upload (credentials from backend/.env, or the environment, which takes precedence):
 
-    set S3_ACCESS_KEY_ID=...
-    set S3_SECRET_ACCESS_KEY=...
-    set R2_ACCOUNT_ID=...
     python -m scripts.upload_staging --bucket datasport-vault --prefix staging
 
-Requires boto3 for the upload path only:  pip install boto3
+boto3 is required for the upload path only; it ships in requirements.txt.
 """
 from __future__ import annotations
 
@@ -24,6 +21,15 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# The docstring promises backend/.env works; make that true. Credentials already set
+# in the environment win, so CI and one-off shell overrides still behave as before.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
+except ImportError:  # python-dotenv is in requirements.txt, but do not hard-fail on it
+    pass
 
 from Executer.duckdb_store import STAGING_VIEWS, default_staging_dir  # noqa: E402
 

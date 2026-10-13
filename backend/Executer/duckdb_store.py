@@ -365,6 +365,11 @@ def get_db_schema(conn: duckdb.DuckDBPyConnection | None = None) -> str:
     return schema_description
 
 
+def _reset_connection() -> None:
+    global _conn
+    _conn = None
+
+
 def execute_query(
     conn: duckdb.DuckDBPyConnection,
     sql_query: str,
@@ -375,7 +380,21 @@ def execute_query(
     logger.info("Executing DuckDB SQL: %s", (sql_query or "")[:600])
     try:
         with _duck_lock:
-            df = conn.execute(sql_query).fetchdf()
+            try:
+                df = conn.execute(sql_query).fetchdf()
+            except duckdb.ConnectionException:
+                # Something closed the shared singleton; rebuild once instead of
+                # failing every route until restart. (Checked under the lock — a
+                # probe query outside it raced other threads on the connection.)
+                if conn is not _conn:
+                    raise
+                logger.warning("DuckDB connection was closed; reconnecting")
+                _reset_connection()
+                conn = None
+        if conn is None:
+            new_conn = get_connection()
+            with _duck_lock:
+                df = new_conn.execute(sql_query).fetchdf()
     except Exception as exc:
         logger.error("DuckDB query failed: %s", exc)
         raise

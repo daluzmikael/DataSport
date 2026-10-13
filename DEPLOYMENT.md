@@ -72,16 +72,23 @@ token with **Object Read & Write** scoped to it. Note the Account ID.
 The upload needs `boto3`, which is in `requirements.txt` (workstation only —
 the server reads from R2 and never uploads, so it is not in the Render image).
 
+Put the three values in `backend/.env` (gitignored) — the script reads them from
+there, so secrets never go on a command line:
+
+```env
+R2_ACCOUNT_ID=...
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+```
+
 ```powershell
-$env:R2_ACCOUNT_ID="<account id>"
-$env:S3_ACCESS_KEY_ID="<access key id>"
-$env:S3_SECRET_ACCESS_KEY="<secret access key>"
 python -m scripts.upload_staging --bucket datasport-vault --prefix staging
 ```
 
 ## 3. Backend on Render
 
-Render → New → Blueprint → this repo. It reads `render.yaml` and creates the
+Render → New → Blueprint → this repo, branch `deploy-test` (`render.yaml` is not on
+`main` yet). It reads `render.yaml` and creates the
 `datasport-api` service. Then set the secrets it left blank:
 
 | Variable | Value |
@@ -92,7 +99,7 @@ Render → New → Blueprint → this repo. It reads `render.yaml` and creates t
 | `S3_SECRET_ACCESS_KEY` | R2 secret access key |
 | `OPENAI_API_KEY` | OpenAI key |
 | `FIREBASE_API_KEY` | Firebase Web API key |
-| `CORS_ALLOW_ORIGINS` | Vercel domain, e.g. `https://datasport.vercel.app` (set after step 4) |
+| `CORS_ALLOW_ORIGINS` | `https://datasport-two.vercel.app` (the Vercel production domain) |
 
 Verify:
 

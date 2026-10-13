@@ -9,18 +9,6 @@ import {
 import { resolveNbaPlayerId } from "../api/nbaIds"
 import { fetchPlayerSeasonTrends } from "../api/stagingClient"
 
-/** Vault trends enabled for Tatum first; expand once validated. */
-const VAULT_TREND_PLAYER_IDS = new Set([
-  "player-tatum",
-  "1628369",
-  "nba-1628369",
-])
-
-function vaultTrendsEnabled(playerId: string, nbaId: string | null): boolean {
-  if (!nbaId) return false
-  return VAULT_TREND_PLAYER_IDS.has(playerId) || VAULT_TREND_PLAYER_IDS.has(nbaId)
-}
-
 function resolveTrendPoints(
   playerId: string,
   rows: Record<string, unknown>[] | null,
@@ -36,7 +24,7 @@ function resolveTrendPoints(
 
 export function useStagingPlayerSeasonTrends(playerId: string) {
   const nbaId = resolveNbaPlayerId(playerId)
-  const vaultEnabled = vaultTrendsEnabled(playerId, nbaId)
+  const vaultEnabled = Boolean(nbaId)
   const [rows, setRows] = useState<Record<string, unknown>[] | null>(null)
   const [fromApi, setFromApi] = useState(false)
   const [loading, setLoading] = useState(false)

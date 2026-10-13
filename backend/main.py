@@ -33,6 +33,9 @@ from auth import (
 )
 from Interpreter.interpreter import run_query, debug_query_routing, use_router_pipeline
 from Interpreter.pipeline import run_routed_query
+from Interpreter import conversation_state
+from Interpreter.smalltalk import classify_smalltalk, smalltalk_reply
+from DashboardBackend.routed_dashboard import dashboard_for_question
 from Interpreter.sql_builder import bundles_to_records, primary_bundle_for_frontend
 from llm.client import LLMNotConfiguredError
 from openai import OpenAI
@@ -45,6 +48,10 @@ app = FastAPI()
 from api.staging_reads import router as staging_router
 
 app.include_router(staging_router)
+
+from api.live import router as live_router
+
+app.include_router(live_router)
 
 from llm.client import openai_base_url
 
@@ -93,6 +100,10 @@ class QueryRequest(BaseModel):
     question: str
     conversationId: Optional[str] = None
     history: Optional[List[Dict[str, Any]]] = None
+    # Compact state returned by the previous /api/analysis turn (see
+    # Interpreter/conversation_state.py). When present it replaces `history`
+    # for follow-up resolution; older clients can keep sending history only.
+    conversationState: Optional[Dict[str, Any]] = None
 
 class AuthRequest(BaseModel):
     email: str
@@ -679,22 +690,43 @@ def _build_effective_question_from_history(
     return effective_question, analysis_question, "deterministic_context_wrapper"
 
 @app.post("/api/dashboards")
-async def dashboard_endpoint(request: QueryRequest):
-    result = interpret_question(request.question)
-    if result.get("success"):
-        return result
+def dashboard_endpoint(request: QueryRequest):
+    # Sync def on purpose: FastAPI runs it in the threadpool, so the blocking router
+    # LLM call + DuckDB read don't freeze every other route on the event loop.
+    # Router pipeline (DuckDB vault): deterministic chart from the RouterPlan — see
+    # DashboardBackend/routed_dashboard.py. The Team45 LLM-SQL interpreter only works
+    # against the old Postgres schema, so it is kept for INTERPRETER_PIPELINE=legacy.
+    if use_router_pipeline():
+        result = dashboard_for_question(request.question)
     else:
-        print("Error details:", result.get("error"), result.get("details"))
-        raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
+        result = interpret_question(request.question)
+    if not result.get("success"):
+        print("Dashboard not built:", result.get("error"), result.get("details"))
+    # Always 200: ai_analyst shows `error` in its alert; no raw 4xx/5xx text.
+    return result
 
-@app.post("/api/analysis")
-async def analysis_endpoint(
+def analysis_endpoint(
     request: QueryRequest,
     authorization: Optional[str] = Header(default=None),
+    _turn: Optional[Dict[str, Any]] = None,
 ):
+    # Routed via analysis_endpoint_with_state below; `_turn` carries the router
+    # context in and the plan/bundles out so the wrapper can update the state.
     try:
         print("----HIT----- /api/analysis")
         print(f"Question: {request.question}")
+
+        # Greetings / small talk / keyboard mash: answer instantly, no LLM call.
+        smalltalk_intent = classify_smalltalk(request.question)
+        if smalltalk_intent:
+            print(f"Small-talk short-circuit: {smalltalk_intent}")
+            return {
+                "success": True,
+                "analysis": smalltalk_reply(smalltalk_intent),
+                "data": [],
+                "question": request.question,
+                "intent": smalltalk_intent,
+            }
 
         effective_question = request.question
         analysis_question = request.question
@@ -702,8 +734,17 @@ async def analysis_endpoint(
         history_context_reason = "no_history_available"
         history_messages: List[Dict[str, Any]] = _sanitize_history_messages(request.history)
 
+        routing_context = (_turn or {}).get("context") or ""
+        if routing_context and not use_router_pipeline():
+            routing_context = ""  # legacy pipeline has no router to hand state to
+
+        # Conversation state (when the client sent it) replaces the transcript:
+        # the router resolves the follow-up itself — no rewrite LLM call.
+        if routing_context:
+            history_context_applied = True
+            history_context_reason = "conversation_state_used"
         # Prefer history passed by the frontend (works for both guest and auth chats).
-        if history_messages and _should_apply_history_context(request.question):
+        elif history_messages and _should_apply_history_context(request.question):
             effective_question, analysis_question, context_strategy = _build_effective_question_from_history(
                 request.question, history_messages
             )
@@ -764,7 +805,15 @@ async def analysis_endpoint(
 
         try:
             if router_mode:
-                table_bundles, router_plan = run_routed_query(effective_question)
+                table_bundles, router_plan = run_routed_query(
+                    effective_question, context=routing_context or None
+                )
+                if _turn is not None:
+                    _turn["plan"], _turn["bundles"] = router_plan, table_bundles
+                if routing_context:
+                    analysis_question = conversation_state.resolved_question(
+                        request.question, router_plan
+                    )
                 query_result = primary_bundle_for_frontend(table_bundles)
             else:
                 query_result = run_query(effective_question)
@@ -773,6 +822,16 @@ async def analysis_endpoint(
                 status_code=503,
                 detail=f"LLM API key not configured for router: {llm_exc}",
             ) from llm_exc
+
+        # Call 1 says this isn't an NBA question at all — friendly capabilities reply.
+        if router_mode and router_plan is not None and router_plan.is_off_topic():
+            return {
+                "success": True,
+                "analysis": smalltalk_reply("off_topic"),
+                "data": [],
+                "question": analysis_question,
+                "intent": "off_topic",
+            }
 
         # Call 1 rejected the question as needing more than one table.
         if router_mode and router_plan is not None and not getattr(router_plan, "supported", True):
@@ -882,8 +941,76 @@ async def analysis_endpoint(
         return payload
 
     except Exception as e:
-        print(f"Analysis error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        # Never surface a stack trace / SQL error in the chat bubble. Log it, and
+        # return a friendly answer the frontends render like any other reply.
+        print(f"Analysis error: {type(e).__name__}: {str(e)}")
+        logging.getLogger(__name__).exception("Analysis failed")
+        payload = {
+            "success": True,
+            "analysis": (
+                "Sorry — I couldn't answer that one. Try rephrasing with a player or "
+                "team name and a season, e.g. \"Jokic points per game in 2024-25\" or "
+                "\"Celtics record 2024-25\"."
+            ),
+            "data": [],
+            "question": request.question,
+            "intent": "error",
+        }
+        if _analysis_debug_enabled():
+            payload["debug"] = {"error": f"{type(e).__name__}: {e}"}
+        return payload
+
+
+# Plain `def`: the LLM and DuckDB calls block, so FastAPI must run this in its
+# threadpool — as `async def` it froze every other route until the answer finished.
+@app.post("/api/analysis")
+def analysis_endpoint_with_state(
+    request: QueryRequest,
+    authorization: Optional[str] = Header(default=None),
+):
+    """/api/analysis plus compact conversation state (backward compatible).
+
+    Request may carry `conversationState` (whatever the previous response
+    returned). Response always carries the updated `conversationState`; clients
+    that ignore it keep the old history-based behaviour.
+    """
+    prior_state = conversation_state.sanitize_state(request.conversationState)
+    turn: Dict[str, Any] = {
+        "context": conversation_state.router_context_block(prior_state) if prior_state else "",
+        "plan": None,
+        "bundles": None,
+    }
+    payload = analysis_endpoint(request, authorization, _turn=turn)
+    if not isinstance(payload, dict):
+        return payload
+
+    if payload.get("intent"):
+        # Small talk / off-topic / error turns don't move the conversation focus.
+        new_state = prior_state
+    else:
+        name_column = None
+        plan = turn.get("plan")
+        if plan is not None and getattr(plan, "table", None):
+            try:
+                from Interpreter.sql_builder import entity_name_column
+
+                name_column = entity_name_column(plan)
+            except Exception:  # noqa: BLE001 — falls back to common name columns
+                name_column = None
+        new_state = conversation_state.update_state(
+            prior_state,
+            question=request.question,
+            plan=plan,
+            bundles=turn.get("bundles"),
+            name_column=name_column,
+            answer=payload.get("analysis") if isinstance(payload.get("analysis"), str) else None,
+        )
+    payload["conversationState"] = new_state
+    if isinstance(payload.get("debug"), dict):
+        payload["debug"]["conversationStateIn"] = bool(prior_state)
+        payload["debug"]["routerContextChars"] = len(turn["context"])
+    return payload
+
 
 @app.post("/api/signup")
 async def signup_endpoint(request: AuthRequest):

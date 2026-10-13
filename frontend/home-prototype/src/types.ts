@@ -236,6 +236,10 @@ export interface CompactGame {
   homeScore: number
   period: string
   clock: string
+  /** Real `/api/live` rows: scheduled games show tip time instead of a score. */
+  state?: "scheduled" | "live" | "final"
+  /** Involves a followed team (scheduled followed games render as compact rows). */
+  followed?: boolean
 }
 
 export type LiveFeedItem = TeamGameLive | PlayerLive | CompactGame

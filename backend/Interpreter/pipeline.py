@@ -63,9 +63,15 @@ def _log_tables_accessed(plan: RouterPlan, bundles: dict[str, pd.DataFrame]) -> 
     logger.info("\n".join(lines))
 
 
-def run_routed_query(question: str) -> tuple[dict[str, pd.DataFrame], RouterPlan]:
-    """Full interpreter path: route → execute → (one repair on SQL failure)."""
-    plan = route_question(question)
+def run_routed_query(
+    question: str, *, context: str | None = None
+) -> tuple[dict[str, pd.DataFrame], RouterPlan]:
+    """Full interpreter path: route → execute → (one repair on SQL failure).
+
+    `context` is the optional compact conversation state handed to the router
+    so follow-up questions resolve without a separate rewrite call.
+    """
+    plan = route_question(question, context=context)
     _log_plan(question, plan)
 
     if not plan.supported:
@@ -85,6 +91,7 @@ def run_routed_query(question: str) -> tuple[dict[str, pd.DataFrame], RouterPlan
                     + "; ".join(errors)
                     + ". Pick columns and slices that actually exist on the table."
                 ),
+                context=context,
             )
         except Exception as exc:  # noqa: BLE001 — repair routing itself failed
             logger.error("Router repair attempt failed: %s", exc)

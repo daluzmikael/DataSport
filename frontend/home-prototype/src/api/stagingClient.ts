@@ -393,6 +393,18 @@ export async function fetchPlayerShotZones(
   })
 }
 
+/** Every FGA with court coordinates (`player_shot_chart`). `season="career"` = all seasons. */
+export async function fetchPlayerShotChart(
+  playerId: string,
+  season: string,
+  seasonType = "Regular Season",
+) {
+  return stagingGet<Record<string, unknown>[]>(`/api/staging/players/${playerId}/shot-chart`, {
+    season,
+    season_type: seasonType,
+  })
+}
+
 export async function fetchTeamSeasonStats(
   teamId: string,
   season: string,

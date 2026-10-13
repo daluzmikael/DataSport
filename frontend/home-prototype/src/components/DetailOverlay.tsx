@@ -5,6 +5,7 @@ import { getGameDetail, LIVE_FEED } from "../data/mock"
 import { getTeamProfile } from "../data/teamProfileMock"
 import { teamProfileIdFromAbbr } from "../data/liveDashboardFeed"
 import { PLAY_BY_PLAY } from "../data/otherLiveGamesMock"
+import { getLiveBoxRows, getLiveTeamTotals } from "../data/liveRegistry"
 import type { DetailTarget, GameDetailView } from "../types"
 import { TeamDetail } from "./TeamDetail"
 import { TeamGameChartsSection } from "./charts/TeamGameChartsSection"
@@ -514,6 +515,9 @@ function TeamGameDetail({
   onReference: (label: string) => void
 }) {
   const [statsTab, setStatsTab] = useState<GameLogTab>("general")
+  const liveBoxSubtitle = getLiveBoxRows(game.id, game.home.abbr, "general")
+    ? `${game.isLive ? "Live" : "Final"} box score · NBA live feed`
+    : undefined
   const playByPlay = PLAY_BY_PLAY[game.id] ?? [
     "— timeout",
     "— made 3PT",
@@ -528,17 +532,25 @@ function TeamGameDetail({
         onStatsTabChange={setStatsTab}
         onOpenTeam={(abbr) => onOpenTeam(teamProfileIdFromAbbr(abbr))}
         onReference={onReference}
+        isFinal={liveBoxSubtitle != null && !game.isLive}
+        statTabs={liveBoxSubtitle ? ["general", "advanced"] : undefined}
+        awayTeamValues={getLiveTeamTotals(game.id, game.away.abbr, statsTab)}
+        homeTeamValues={getLiveTeamTotals(game.id, game.home.abbr, statsTab)}
       />
       <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
         <TeamBoxScoreTable
           teamAbbr={game.away.abbr}
           tab={statsTab}
+          rows={getLiveBoxRows(game.id, game.away.abbr, statsTab)}
+          subtitle={liveBoxSubtitle}
           onOpenPlayer={(playerId) => onOpenPlayerGame(playerId, game.id)}
           onReference={onReference}
         />
         <TeamBoxScoreTable
           teamAbbr={game.home.abbr}
           tab={statsTab}
+          rows={getLiveBoxRows(game.id, game.home.abbr, statsTab)}
+          subtitle={liveBoxSubtitle}
           onOpenPlayer={(playerId) => onOpenPlayerGame(playerId, game.id)}
           onReference={onReference}
         />

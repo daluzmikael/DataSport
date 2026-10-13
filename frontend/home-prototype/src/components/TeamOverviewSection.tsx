@@ -58,6 +58,13 @@ function TopLeaderCard({
   )
 }
 
+/** ".506" / 0.506 → "50.6%" for the headline tiles. */
+function asPercent(value: string | number | undefined): string {
+  const n = typeof value === "number" ? value : parseFloat(String(value ?? ""))
+  if (Number.isNaN(n)) return String(value ?? "—")
+  return `${(n <= 1 ? n * 100 : n).toFixed(1)}%`
+}
+
 export function TeamOverviewSection({ profile, onReference }: TeamOverviewSectionProps) {
   const { season, setSeason, seasons: seasonOptions } = useTeamVaultSeason(profile)
   const { snapshot, fromApi: snapshotFromApi } = useStagingTeamSeasonSnapshot(profile, season)
@@ -121,8 +128,8 @@ export function TeamOverviewSection({ profile, onReference }: TeamOverviewSectio
           <KeyStat label="PPG" value={averages.pts} />
           <KeyStat label="RPG" value={averages.reb} />
           <KeyStat label="APG" value={averages.ast} />
-          <KeyStat label="FG%" value={averages.fg_pct} />
-          <KeyStat label="3P%" value={averages.fg3_pct} />
+          <KeyStat label="FG%" value={asPercent(averages.fg_pct)} />
+          <KeyStat label="3P%" value={asPercent(averages.fg3_pct)} />
         </div>
       </div>
     </div>

@@ -70,7 +70,7 @@ export function PlayerTrendChart({
                 y1={y}
                 x2={W - PAD.right}
                 y2={y}
-                stroke="rgba(255,255,255,0.08)"
+                stroke="rgba(32,31,29,0.08)"
                 strokeWidth={1}
               />
               <text
@@ -78,7 +78,7 @@ export function PlayerTrendChart({
                 y={y}
                 textAnchor="end"
                 dominantBaseline="middle"
-                fill="rgba(255,255,255,0.4)"
+                fill="rgba(32,31,29,0.4)"
                 fontSize={9}
                 fontFamily="DM Sans, sans-serif"
               >
@@ -116,7 +116,7 @@ export function PlayerTrendChart({
                   x={xAt(i)}
                   y={H - 6}
                   textAnchor="middle"
-                  fill="rgba(255,255,255,0.45)"
+                  fill="rgba(32,31,29,0.45)"
                   fontSize={8}
                   fontFamily="DM Sans, sans-serif"
                 >

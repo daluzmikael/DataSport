@@ -8,6 +8,7 @@ import {
   SEARCHABLE_TEAMS,
 } from "../data/favoritesMock"
 import { usePlayerVaultSearch } from "../hooks/usePlayerVaultSearch"
+import { isTeamLiveNow } from "../data/liveRegistry"
 import type { FavoritePlayer, FavoriteTeam } from "../types"
 import { StagingBadge } from "./StagingBadge"
 
@@ -165,7 +166,7 @@ export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) 
                 >
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-lg font-bold">{team.abbr}</span>
-                    {team.isLive && (
+                    {(isTeamLiveNow(team.abbr) ?? team.isLive) && (
                       <span className="rounded bg-ds-live/20 px-1.5 py-0.5 text-[10px] font-bold uppercase text-ds-live">
                         Live
                       </span>
@@ -206,7 +207,7 @@ export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) 
                 >
                   <div className="flex items-center gap-2">
                     <span className="truncate font-semibold">{player.name}</span>
-                    {player.isLive && (
+                    {(isTeamLiveNow(player.teamAbbr) ?? player.isLive) && (
                       <span className="shrink-0 rounded bg-ds-live/20 px-1.5 py-0.5 text-[10px] font-bold uppercase text-ds-live">
                         Live
                       </span>
@@ -221,7 +222,7 @@ export function FavoritesPage({ onOpenPlayer, onOpenTeam }: FavoritesPageProps) 
                       </span>
                     )}
                   </p>
-                  {!player.isLive && (
+                  {!(isTeamLiveNow(player.teamAbbr) ?? player.isLive) && (
                     <p className="mt-0.5 text-[11px] text-ds-muted">Not on live board — tap for profile</p>
                   )}
                 </button>

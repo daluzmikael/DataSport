@@ -12,6 +12,29 @@ import { guestStorage } from "@/lib/guest-storage"
 
 type Message = { role: "user" | "assistant"; content: string }
 
+// Compact conversation state returned by /api/analysis (players/teams/seasons in
+// focus). Echoed back on the next turn so follow-ups ("what about his rebounds?")
+// resolve without resending the whole transcript. Kept per conversation in
+// sessionStorage; if it's missing the backend falls back to `history`.
+const convStateKey = (id: string) => `convState:${id}`
+function readConvState(id: string | undefined): unknown {
+  if (!id || typeof window === "undefined") return undefined
+  try {
+    const raw = sessionStorage.getItem(convStateKey(id))
+    return raw ? JSON.parse(raw) : undefined
+  } catch {
+    return undefined
+  }
+}
+function writeConvState(id: string | undefined, state: unknown) {
+  if (!id || typeof window === "undefined" || !state) return
+  try {
+    sessionStorage.setItem(convStateKey(id), JSON.stringify(state))
+  } catch {
+    /* storage full / blocked — state is an optimisation only */
+  }
+}
+
 export default function ChatPage() {
   const { id: conversationId } = useParams<{ id: string }>()
   const { user } = useAuth()
@@ -64,6 +87,7 @@ export default function ChatPage() {
           conversationId,
           // Send prior turns so continuation works for both auth and guest chats.
           history: messages,
+          conversationState: readConvState(conversationId),
         }),
       })
 
@@ -74,6 +98,7 @@ export default function ChatPage() {
 
       setLoadingState("processing")
       const data = await res.json()
+      writeConvState(conversationId, data.conversationState)
       const assistantContent = data.analysis || "No analysis available."
       
       // delay

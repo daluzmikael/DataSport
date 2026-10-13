@@ -13,9 +13,10 @@ function pct(v: unknown): string {
   if (v == null || v === "") return "—"
   const n = typeof v === "number" ? v : parseFloat(String(v))
   if (Number.isNaN(n)) return String(v)
-  if (n > 0 && n <= 1) return `.${Math.round(n * 1000).toString().padStart(3, "0")}`
-  if (n > 1 && n <= 100) return `.${Math.round(n * 10).toString().padStart(3, "0")}`
-  return String(v)
+  const frac = n >= 0 && n <= 1 ? n : n > 1 && n <= 100 ? n / 100 : null
+  if (frac == null) return String(v)
+  const thousandths = Math.round(frac * 1000)
+  return thousandths >= 1000 ? "1.000" : `.${thousandths.toString().padStart(3, "0")}`
 }
 
 function ordinalRank(n: number): string {
@@ -75,9 +76,7 @@ function calcShootingPct(made: unknown, att: unknown): string {
   const m = typeof made === "number" ? made : parseFloat(String(made ?? ""))
   const a = typeof att === "number" ? att : parseFloat(String(att ?? ""))
   if (Number.isNaN(m) || Number.isNaN(a) || a === 0) return "—"
-  return `.${Math.round((m / a) * 1000)
-    .toString()
-    .padStart(3, "0")}`
+  return pct(m / a)
 }
 
 function formatPlusMinus(v: unknown): string {
@@ -350,13 +349,9 @@ export function generalValuesFromRow(
     if (dec != null) return minVal > 0 ? num(minVal, dec) : String(minRaw ?? "—")
     return minVal > 0 ? num(minVal, minVal % 1 === 0 ? 0 : 1) : String(minRaw ?? "—")
   }
-  const fmtPct = (field: unknown, made: unknown, att: unknown) => {
-    if (dec != null && field != null && field !== "") {
-      const n = typeof field === "number" ? field : parseFloat(String(field))
-      if (!Number.isNaN(n)) return num(n, dec)
-    }
-    return pct(field) !== "—" ? pct(field) : calcShootingPct(made, att)
-  }
+  // Shooting splits are fractions (0.506); `dec` must not apply or they round to 0.5.
+  const fmtPct = (field: unknown, made: unknown, att: unknown) =>
+    pct(field) !== "—" ? pct(field) : calcShootingPct(made, att)
 
   return {
     wl: String(pick(row, "WL", "wl") ?? "—"),

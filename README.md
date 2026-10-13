@@ -154,14 +154,6 @@ Open the URL Vite prints (usually http://localhost:5173). Use **Continue as demo
 
 With `VITE_USE_STAGING_API=true`, player/team profiles show a green **Vault** badge when live data loads.
 
-### 4. AI analyst app (Analyst + Dashboards)
-
-```powershell
-cd DataSport\frontend\ai_analyst
-npm install
-npm run dev -- --hostname 127.0.0.1 --port 3000
-```
-
 Open http://127.0.0.1:3000. Requires OpenAI and Firebase configuration for full functionality.
 
 ## Data Ingestion (optional)

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import {
+  fetchPlayerBio,
   fetchPlayerCareer,
   fetchPlayerGameLogSeasons,
   fetchPlayerImpactProfile,
@@ -54,7 +55,11 @@ async function resolveVaultPlayerProfile(
 
   const career = await fetchPlayerCareer(nbaId)
   if (career?.length) {
-    const name = career.map((r) => pickName(r)).find(Boolean) ?? "Player"
+    // Career rows carry no name column; the bio table does.
+    const bio = (await fetchPlayerBio(nbaId)) as Record<string, unknown> | null
+    const name =
+      career.map((r) => pickName(r)).find(Boolean) ??
+      (bio?.DISPLAY_FIRST_LAST ? String(bio.DISPLAY_FIRST_LAST) : "Player")
     const teamAbbr = career.map((r) => pickTeamAbbr(r)).find(Boolean) ?? "—"
     return stubPlayerForStaging(nbaId, name, teamAbbr)
   }
@@ -92,11 +97,15 @@ export function useStagingPlayerProfile(
     setVaultProfile(null)
 
     ;(async () => {
+      // A free-tier API cold start (~50s wake + R2 view load) fails every read at
+      // first; keep the loading state up for ~75s instead of locking in a stub.
+      const backoffMs = [0, 1500, 3000, 5000, 8000, 12000, 15000, 15000, 15000]
       let profile: PlayerLive | null = null
-      for (let attempt = 0; attempt < 3 && !profile; attempt++) {
-        if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt))
+      for (const delay of backoffMs) {
+        if (delay) await new Promise((r) => setTimeout(r, delay))
         if (cancelled) return
         profile = await resolveVaultPlayerProfile(nbaId, preferredSeason)
+        if (profile) break
       }
       if (cancelled) return
       setVaultProfile(profile ?? stubPlayerForStaging(nbaId, "Player", "—"))

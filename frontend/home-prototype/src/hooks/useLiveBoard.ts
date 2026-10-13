@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { fetchLiveBoard, fetchLiveGame, type LiveBoard, type LiveBoxScore, type LiveGame } from "../api/liveClient"
 import {
+  boxPlayerGameRows,
   boxToGameDetail,
   boxToRows,
   boxToTeamTotals,
@@ -14,6 +15,7 @@ import {
 import {
   markLiveDataLoaded,
   registerLiveGameDetail,
+  registerLivePlayerGameRows,
   setLivePlayerNextGame,
   setLiveTeams,
 } from "../data/liveRegistry"
@@ -85,6 +87,7 @@ function buildDayItems(
         box ? boxToRows(box) : undefined,
         box ? boxToTeamTotals(box) : undefined,
       )
+      if (box) registerLivePlayerGameRows(g.gameId, boxPlayerGameRows(box))
       if (followed && detail.kind === "followed-team") {
         raw.push(detail)
         continue

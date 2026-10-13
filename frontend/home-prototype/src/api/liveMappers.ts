@@ -171,6 +171,31 @@ function dnpRow(p: LivePlayerLine): TeamBoxRow {
   return { id: `nba-${p.personId}`, player: p.name, isDnp: true, values: { min: "DNP" } }
 }
 
+/**
+ * One `player_game_logs`-shaped row per player (keyed by personId), so the
+ * player-game view can show a live/preseason game the vault has not staged yet.
+ */
+export function boxPlayerGameRows(box: LiveBoxScore): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {}
+  const { game } = box
+  for (const side of ["home", "away"] as const) {
+    const team = box.teams[side]
+    const opp = box.teams[side === "home" ? "away" : "home"]
+    const own = side === "home" ? game.home.score : game.away.score
+    const theirs = side === "home" ? game.away.score : game.home.score
+    for (const p of team.players.filter((x) => x.played)) {
+      out[String(p.personId)] = {
+        ...boxRecord(p),
+        GAME_ID: game.gameId,
+        GAME_DATE: game.date,
+        MATCHUP: side === "home" ? `${team.tricode} vs. ${opp.tricode}` : `${team.tricode} @ ${opp.tricode}`,
+        WL: game.isFinal ? (own > theirs ? "W" : "L") : null,
+      }
+    }
+  }
+  return out
+}
+
 /** Box rows per team tricode in the shape TeamBoxScoreTable renders. */
 export function boxToRows(
   box: LiveBoxScore,

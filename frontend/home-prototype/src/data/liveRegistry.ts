@@ -64,6 +64,27 @@ export function getLiveBoxRows(
   return tab === "advanced" ? team.advanced : team.general
 }
 
+const playerGameRows = new Map<string, Record<string, Record<string, unknown>>>()
+
+function normGameId(gameId: string): string {
+  return gameId.replace(/\D/g, "").padStart(10, "0")
+}
+
+export function registerLivePlayerGameRows(
+  gameId: string,
+  rows: Record<string, Record<string, unknown>>,
+): void {
+  playerGameRows.set(normGameId(gameId), rows)
+}
+
+/** Raw live box line for one player in one game, shaped like a vault game-log row. */
+export function getLivePlayerGameRow(
+  gameId: string,
+  personId: string,
+): Record<string, unknown> | undefined {
+  return playerGameRows.get(normGameId(gameId))?.[personId]
+}
+
 export function setLivePlayerNextGame(ids: string[], next: LiveNextGameLabel | null): void {
   for (const id of ids) {
     if (next) nextGames.set(id, next)

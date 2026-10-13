@@ -1,4 +1,5 @@
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
+import { resolveNbaTeamId, teamAbbrFromProfileId } from "../api/nbaIds"
 import { useStagingTeamFranchiseAccolades } from "../hooks/useStagingTeam"
 import type { TeamProfile } from "../types"
 import { ReferencedLabel } from "./AskReferenceButton"
@@ -35,6 +36,31 @@ function StatCell({
   )
 }
 
+/** Team logo (public/team-logos, copied from the NBA CDN); falls back to the abbreviation if the id is unknown or the image fails. */
+function TeamLogo({ profile }: { profile: TeamProfile }) {
+  const nbaId = resolveNbaTeamId(teamAbbrFromProfileId(profile.id))
+  const [failed, setFailed] = useState(false)
+  const box =
+    "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-ds-border bg-ds-raised/40 sm:h-14 sm:w-14"
+  if (!nbaId || failed) {
+    return (
+      <div className={box} aria-hidden>
+        <span className="font-mono text-sm font-bold text-ds-muted">{profile.abbr}</span>
+      </div>
+    )
+  }
+  return (
+    <div className={box}>
+      <img
+        src={`/team-logos/${nbaId}.svg`}
+        alt={`${profile.city} ${profile.name} logo`}
+        className="h-10 w-10 object-contain sm:h-12 sm:w-12"
+        onError={() => setFailed(true)}
+      />
+    </div>
+  )
+}
+
 export function TeamFranchiseHeader({ profile, onReference }: TeamFranchiseHeaderProps) {
   const { accolades } = useStagingTeamFranchiseAccolades(profile)
 
@@ -46,14 +72,7 @@ export function TeamFranchiseHeader({ profile, onReference }: TeamFranchiseHeade
             Franchise
           </p>
           <div className="mt-1 flex items-center gap-3">
-            <div
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-dashed border-ds-border bg-ds-raised/40 sm:h-14 sm:w-14"
-              aria-hidden
-            >
-              <span className="text-[9px] font-medium uppercase tracking-wide text-ds-muted">
-                [logo]
-              </span>
-            </div>
+            <TeamLogo profile={profile} />
             <div className="min-w-0">
               <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
                 <ReferencedLabel

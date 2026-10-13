@@ -2,7 +2,7 @@ import type { LeaderboardEntry } from "../../api/playerLeaderboardData"
 
 const W = 520
 const ROW_H = 28
-const PAD = { top: 12, right: 52, bottom: 8, left: 108 }
+const PAD = { top: 12, right: 52, bottom: 8, left: 132 }
 const BAR_COLOR = "#3ecf8e"
 const HIGHLIGHT_COLOR = "#f5c542"
 

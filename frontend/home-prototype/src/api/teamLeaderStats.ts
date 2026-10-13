@@ -21,7 +21,8 @@ export function leaderApiStat(statId: TeamLeaderStatId): string | null {
 }
 
 function formatPct(value: number): string {
-  if (value > 0 && value <= 1) {
+  if (value === 1 || value === 100) return "1.000"
+  if (value >= 0 && value <= 1) {
     return `.${Math.round(value * 1000)
       .toString()
       .padStart(3, "0")}`

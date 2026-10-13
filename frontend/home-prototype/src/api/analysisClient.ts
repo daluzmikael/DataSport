@@ -24,17 +24,20 @@ export interface AnalysisResult {
   /** Absent when no chart could be chosen honestly — every refusal and empty-result
    *  path returns text only. */
   charts?: ChartSpec[]
+  /** Opaque compact conversation state; pass it back on the next turn. */
+  conversationState?: unknown
 }
 
 /** Calls the real /api/analysis pipeline (router → SQL builder → analyst). */
 export async function postAnalysis(
   question: string,
   history: AnalysisHistoryMessage[] = [],
+  conversationState?: unknown,
 ): Promise<AnalysisResult> {
   const res = await fetch(analysisUrl(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, history }),
+    body: JSON.stringify({ question, history, conversationState }),
   })
   if (!res.ok) {
     const detail = await res.text().catch(() => "")

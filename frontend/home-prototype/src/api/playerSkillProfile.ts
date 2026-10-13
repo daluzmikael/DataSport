@@ -38,7 +38,8 @@ export function buildSoloSkillRadar(
   row: Record<string, unknown>,
 ): SkillRadarCategory[] {
   return SKILL_CATEGORIES.map((cat) => {
-    const raw = parseStat(row, cat)
+    // One decimal: career averages are totals / GP and otherwise print as 22.233333…
+    const raw = Math.round(parseStat(row, cat) * 10) / 10
     return { category: cat, raw, normalized: normalizeSkillValue(cat, raw) }
   })
 }
@@ -62,6 +63,6 @@ export function buildSeasonVsCareerCompare(
 }
 
 export function careerCompareFooterText(career: SkillRadarCategory[]): string {
-  const parts = career.map((c) => `${c.category} ${c.raw}`)
+  const parts = career.map((c) => `${c.category} ${c.raw.toFixed(1)}`)
   return `Career averages — ${parts.join(" · ")} (per game)`
 }

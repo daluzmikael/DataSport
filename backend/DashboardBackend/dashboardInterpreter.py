@@ -18,6 +18,10 @@ else:
     logger.warning("OPENAI_API_KEY is not set")
 from llm.client import openai_base_url
 
+
+def _is_duckdb_conn(conn: Any) -> bool:
+    return type(conn).__module__.split(".")[0] in {"duckdb", "_duckdb"}
+
 client = (
     OpenAI(api_key=api_key_env, base_url=openai_base_url())
     if api_key_env
@@ -1355,5 +1359,8 @@ def interpret_question(user_question: str) -> Dict[str, Any]:
         print(f"Error occurred: {e}")
         return {"success": False, "error": str(e)}
     finally:
-        if conn:
+        # get_connection() returns the process-wide DuckDB singleton; closing it
+        # here took down every /api/staging route until restart. Only close
+        # per-request Postgres connections.
+        if conn is not None and not _is_duckdb_conn(conn):
             conn.close()

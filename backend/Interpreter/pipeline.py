@@ -282,10 +282,17 @@ def _apply_floor(plan: RouterPlan, question: str, conn) -> None:
 
 
 def run_routed_query(
-    question: str, context_names: list[str] | None = None
+    question: str,
+    context_names: list[str] | None = None,
+    *,
+    context: str | None = None,
 ) -> tuple[dict[str, pd.DataFrame], RouterPlan]:
-    """Full interpreter path: route → resolve entities → execute → (one repair)."""
-    plan = route_question(question)
+    """Full interpreter path: route → resolve entities → execute → (one repair).
+
+    `context` is the optional compact conversation state handed to the router
+    so follow-up questions resolve without a separate rewrite call.
+    """
+    plan = route_question(question, context=context)
     _log_plan(question, plan)
 
     if not plan.supported:
@@ -330,7 +337,9 @@ def run_routed_query(
         if diagnosis.retry_hint:
             logger.info("Reassessing the plan against the schema and retrying once")
             try:
-                retried = route_question(question, _repair_errors=diagnosis.retry_hint)
+                retried = route_question(
+                    question, _repair_errors=diagnosis.retry_hint, context=context
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.error("Empty-result reassessment failed to route: %s", exc)
                 retried = None
@@ -364,6 +373,7 @@ def run_routed_query(
                     + "; ".join(errors)
                     + ". Pick columns and slices that actually exist on the table."
                 ),
+                context=context,
             )
         except Exception as exc:  # noqa: BLE001 — repair routing itself failed
             logger.error("Router repair attempt failed: %s", exc)

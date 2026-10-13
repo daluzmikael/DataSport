@@ -40,6 +40,8 @@ import {
 
 import { resolveNbaPlayerId } from "../api/nbaIds"
 
+import { getLivePlayerGameRow } from "../data/liveRegistry"
+
 import { USE_STAGING_API } from "../api/config"
 
 import {
@@ -562,7 +564,9 @@ export function useStagingPlayerGame(
 
     ;(async () => {
 
-      const row = await fetchPlayerGameLogSingle(nbaId, nbaGameId)
+      // Live/preseason games are not in the vault yet — fall back to the live box line.
+      const vaultRow = await fetchPlayerGameLogSingle(nbaId, nbaGameId)
+      const row = vaultRow ?? getLivePlayerGameRow(nbaGameId, nbaId) ?? null
 
       if (cancelled) return
 
@@ -586,7 +590,7 @@ export function useStagingPlayerGame(
 
       setSnapshot(mapPlayerGameLogToSnapshot(base, row))
 
-      setFromApi(true)
+      setFromApi(Boolean(vaultRow))
 
     })()
 

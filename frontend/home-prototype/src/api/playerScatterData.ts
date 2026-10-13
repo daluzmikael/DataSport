@@ -1,6 +1,6 @@
 export const DEFAULT_SCATTER_SEASON = "2023-24"
 
-export interface ScatterPointRow {
+export type ScatterPointRow = {
   player_name: string
   x_value: number
   y_value: number

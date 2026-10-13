@@ -763,7 +763,6 @@ export function usePlayerGameLogTableState(playerId: string, initialSeason?: str
     seasonsFromApi,
     isCareer,
     usesStaging,
-    nbaId,
     latestSeason: seasons[0],
     ...gameLog,
   }

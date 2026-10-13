@@ -59,7 +59,7 @@ function mockCareerForPlayer(playerId: string): Record<string, unknown> {
 
 export function useStagingPlayerSkillProfile(
   playerId: string,
-  playerName: string,
+  _playerName: string,
   season: string,
 ) {
   const nbaId = resolveNbaPlayerId(playerId)

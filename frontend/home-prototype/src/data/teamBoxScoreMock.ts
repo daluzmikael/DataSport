@@ -519,7 +519,7 @@ const MIA_GENERAL_PLAYERS: TeamBoxRow[] = [
 const BOS_PLAYERS = BOS_GENERAL_PLAYERS
 const MIA_PLAYERS = MIA_GENERAL_PLAYERS
 
-function at<T>(arr: T[], i: number, fallback: T): T {
+function at<T, F = T>(arr: T[], i: number, fallback: F): T | F {
   return arr[i] ?? fallback
 }
 

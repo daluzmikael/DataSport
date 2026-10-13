@@ -344,13 +344,13 @@ const pastGeneral: Omit<GameLogRow, "isLive">[] = [
 
 function mapPast<T extends Record<string, string | number>>(
   games: Omit<GameLogRow, "isLive">[],
-  mapper: (g: Omit<GameLogRow, "isLive">) => T,
+  mapper: (g: Omit<GameLogRow, "isLive">, i: number) => T,
 ): GameLogRow[] {
-  return games.map((g) => ({
+  return games.map((g, i) => ({
     id: g.id,
     isLive: false,
     game: g.game,
-    values: mapper(g),
+    values: mapper(g, i),
   }))
 }
 

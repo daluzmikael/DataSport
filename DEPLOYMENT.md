@@ -3,8 +3,8 @@
 Production layout:
 
 ```text
-Vercel  (frontend/ai_analyst, Next.js)
-   │  NEXT_PUBLIC_API_URL
+Vercel  (frontend/home-prototype, Vite + React)
+   │  VITE_API_URL
    ▼
 Render  (backend, FastAPI + DuckDB)          free web service
    │  STAGING_DATA_URI
@@ -14,6 +14,18 @@ Cloudflare R2  (staging/*.parquet)           10 GB free, no egress fees
    │  python -m scripts.upload_staging
 Workstation  (ingestion: pull_all → stage_all)
 ```
+
+## Current status (audited 2026-10-13)
+
+| Component | Where | State |
+|-----------|-------|-------|
+| Frontend | Vercel project `datasport` → https://datasport-two.vercel.app | Deployed from `deploy-test`, but still with root dir `frontend/ai_analyst` (the old Team45 app). Must be switched to `frontend/home-prototype` — see step 4 |
+| API | Render `datasport-api` → https://datasport-api.onrender.com | Created directly (not from the Blueprint) from `deploy-test`; secrets still need pasting |
+| Data | R2 bucket `datasport-vault` | Exists; `staging/` uploaded with `upload_staging` |
+
+Remaining steps are steps 3 and 4 below: paste the secrets on Render, switch the
+Vercel root directory to `frontend/home-prototype`, set `VITE_API_URL` and redeploy,
+and authorize `datasport-two.vercel.app` in Firebase.
 
 Ingestion stays on the workstation. The server never calls stats.nba.com; it only
 reads the staged parquet. Re-staging locally and re-running the upload is how
@@ -95,17 +107,21 @@ curl https://datasport-api.onrender.com/api/staging/health
 
 Vercel → Add New → Project → this repo. The one setting that matters:
 
-- **Root Directory:** `frontend/ai_analyst`
+- **Root Directory:** `frontend/home-prototype`
 
-Framework preset, build command and output directory are detected automatically.
+Set **Framework Preset** to Vite; build command (`npm run build`) and output
+directory (`dist`) then follow. `frontend/ai_analyst` is the old Team45 Next.js app
+and is not deployed.
+
 Environment variables (all environments):
 
 | Variable | Value |
 |----------|-------|
-| `NEXT_PUBLIC_API_URL` | `https://datasport-api.onrender.com` — no trailing slash |
-| `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase Web API key |
+| `VITE_API_URL` | `https://datasport-api.onrender.com` — no trailing slash |
 
-These are inlined at build time, so changing one requires a redeploy.
+Without it the app calls relative `/api` paths, which Vercel answers with 404s.
+It is inlined at build time, so changing it requires a redeploy. Firebase is only
+used by the backend (`FIREBASE_API_KEY` on Render); the frontend needs no key.
 
 Once the Vercel domain exists, set `CORS_ALLOW_ORIGINS` on Render to it and let the
 service redeploy. Add the domain to Firebase Authentication → Settings → Authorized

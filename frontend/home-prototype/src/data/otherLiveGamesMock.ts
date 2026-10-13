@@ -105,7 +105,7 @@ function buildByTab(
     "tov_pct",
   ] as const
 
-  const advancedPlayers = players.map((p, i) => ({
+  const advancedPlayers = players.map((p) => ({
     ...p,
     values: p.isDnp
       ? Object.fromEntries(advKeys.map((k) => [k, "—"]))
@@ -633,8 +633,8 @@ export const OTHER_LIVE_GAME_DETAILS: Record<string, OtherLiveGame> = {
   "game-knicks": {
     id: "game-knicks",
     kind: "other-live",
-    home: { abbr: "CLE", name: "Cavaliers", score: 61, line: { q1: 32, q2: 29 } },
-    away: { abbr: "NYK", name: "Knicks", score: 58, line: { q1: 28, q2: 30 } },
+    home: { abbr: "CLE", name: "Cavaliers", score: 61, line: { q1: 32, q2: 29, q3: 0 } },
+    away: { abbr: "NYK", name: "Knicks", score: 58, line: { q1: 28, q2: 30, q3: 0 } },
     period: "Q2",
     clock: "0:34",
     isLive: true,

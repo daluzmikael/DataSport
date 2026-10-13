@@ -1,6 +1,6 @@
 import type { NavPage } from "../types"
 
-const copy: Record<Exclude<NavPage, "analyzer" | "favorites">, { title: string; body: string }> = {
+const copy: Record<Exclude<NavPage, "analyzer" | "favorites" | "players">, { title: string; body: string }> = {
   dashboard: {
     title: "Dashboard",
     body: "Chart-first view: leaderboards, trends, shot charts. This tab switches the main canvas away from chat (not built in prototype).",
@@ -14,7 +14,7 @@ const copy: Record<Exclude<NavPage, "analyzer" | "favorites">, { title: string; 
 export function PlaceholderPage({
   page,
 }: {
-  page: Exclude<NavPage, "analyzer" | "favorites">
+  page: Exclude<NavPage, "analyzer" | "favorites" | "players">
 }) {
   const { title, body } = copy[page]
   return (

@@ -97,8 +97,7 @@ function gameClockMeta(player: PlayerLive): string {
 function isGameLive(gameId: string): boolean {
   const game = getGameDetail(gameId)
   if (!game) return false
-  if ("isLive" in game) return Boolean(game.isLive)
-  return game.period !== "Final"
+  return game.isLive
 }
 
 /** Historical game log page — always finished. */

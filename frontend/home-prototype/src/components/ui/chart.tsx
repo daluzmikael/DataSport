@@ -25,7 +25,7 @@ export function ChartContainer({
   ...props
 }: React.ComponentProps<"div"> & {
   config: ChartConfig
-  children: React.ReactNode
+  children: React.ReactElement
   height?: number
 }) {
   const uniqueId = React.useId()

@@ -154,7 +154,7 @@ Open the URL Vite prints (usually http://localhost:5173). Use **Continue as demo
 
 With `VITE_USE_STAGING_API=true`, player/team profiles show a green **Vault** badge when live data loads.
 
-Open [localhost link](http://localhost:XXXX/). Requires OpenAI and Firebase configuration for full functionality.
+Open (http://localhost:XXXX/). Requires OpenAI and Firebase configuration for full functionality.
 
 ## Data Ingestion (optional)
 
